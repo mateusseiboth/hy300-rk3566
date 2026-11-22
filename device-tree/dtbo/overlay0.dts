@@ -1,0 +1,28 @@
+/dts-v1/;
+// version: 17
+// last_comp_version: 16
+// boot_cpuid_phys: 0x0
+
+/ {
+    fragment@0 {
+        target = <0xFFFFFFFF>;
+        __overlay__ {
+            bootargs_ext = "androidboot.boot_devices=fe310000.sdhci,fe330000.nandc";
+        };
+    };
+    fragment@1 {
+        target = <0xFFFFFFFF>;
+        __overlay__ {
+            mode-bootloader = <0x5242C309>;
+            mode-charge = <0x5242C30B>;
+            mode-fastboot = <0x5242C303>;
+            mode-loader = <0x5242C301>;
+            mode-normal = <0x5242C300>;
+            mode-recovery = <0x5242C303>;
+        };
+    };
+    __fixups__ {
+        chosen = "/fragment@0:target:0";
+        reboot_mode = "/fragment@1:target:0";
+    };
+};

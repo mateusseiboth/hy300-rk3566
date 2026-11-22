@@ -1,0 +1,10 @@
+# hy300-rk3566: animação de boot com log ao vivo (android/bootlog)
+service bootanim /system/bin/sh /system/media/bootlog/bootlog.sh
+    class core animation
+    user root
+    group root graphics audio log readproc
+    seclabel u:r:bootanim:s0
+    disabled
+    oneshot
+    ioprio rt 0
+    task_profiles MaxPerformance

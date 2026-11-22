@@ -24,3 +24,8 @@ extracted/
 out/
 *.o
 *.ko
+
+# device tree extraído é versionado de propósito
+!device-tree/*.dtb
+!device-tree/dtbo/*.dtbo
+__pycache__/
