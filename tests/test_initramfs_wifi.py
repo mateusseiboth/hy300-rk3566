@@ -113,7 +113,7 @@ class WifiMixin:
         out = self.sh("load_wifi_modules /lib/modules/aic8800 /lib/firmware/aic8800")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(self.calls(), [
-            "insmod /lib/modules/aic8800/aic8800_bsp.ko aic_fw_path=/lib/firmware/aic8800",
+            "insmod /lib/modules/aic8800/aic8800_bsp.ko aic_fw_path=/lib/firmware/aic8800 sdio_clock=50000000",
             "insmod /lib/modules/aic8800/aic8800_fdrv.ko"])
 
     def test_stops_and_names_the_module_that_failed(self):

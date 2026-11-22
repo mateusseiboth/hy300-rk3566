@@ -31,8 +31,12 @@ read_cmdline_number() {
 	esac
 }
 
+# O Android de fábrica roda o SDIO do Wi-Fi a 50 MHz. O driver pede 150 MHz para o D80, e no
+# kernel ACK isso vale de verdade: o envio do firmware estoura o tempo.
+WIFI_SDIO_CLOCK=50000000
+
 load_wifi_modules() {
-	insmod "$1/aic8800_bsp.ko" "aic_fw_path=$2" || { echo "insmod aic8800_bsp falhou"; return 1; }
+	insmod "$1/aic8800_bsp.ko" "aic_fw_path=$2" "sdio_clock=$WIFI_SDIO_CLOCK" || { echo "insmod aic8800_bsp falhou"; return 1; }
 	insmod "$1/aic8800_fdrv.ko" || { echo "insmod aic8800_fdrv falhou"; return 1; }
 }
 
