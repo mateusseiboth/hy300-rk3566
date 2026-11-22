@@ -28,8 +28,11 @@ MISC_START = 10240
 MISC_SECTORS = 8192
 BCB_SIZE = 2048
 TIMEOUT = 180
-# rockchip_drm_init faz SMC para o TF-A, que não existe no virt.
-CMDLINE = "console=ttyAMA0 hy300.test=marco1 panic=10 initcall_blacklist=rockchip_drm_init"
+# rockchip_drm_init e, no kernel Android, o system heap do dma-buf da Rockchip
+# (system_heap_create pede o mapa da DDR com sip_smc_get_dram_map) fazem SMC para o TF-A,
+# que não existe no virt.
+CMDLINE = ("console=ttyAMA0 hy300.test=marco1 panic=10 "
+           "initcall_blacklist=rockchip_drm_init,system_heap_create")
 EXPECTED = (
     "hy300: [misc] misc: comando 'boot-recovery' apagado",
     "hy300: [init] relatório: fim",
@@ -77,7 +80,7 @@ def run_qemu(image, initramfs, disk, extra=""):
 
 
 def find_reboot_time(log):
-    match = re.search(r"\[\s*([0-9.]+)\] sysrq: Resetting", log)
+    match = re.search(r"\[\s*([0-9.]+)\](?:\[\s*[TC]\d+\])? sysrq: Resetting", log)
     return float(match.group(1)) if match else None
 
 
