@@ -6,8 +6,14 @@
 #    para o U-Boot não voltar à recovery no próximo boot;
 # 3. espera os drivers terminarem de subir e escreve um relatório no /dev/kmsg, que vai
 #    para o console do pstore (lido depois pelo kernel de fábrica);
-# 4. ~20 s depois do início faz `reboot -f`: reboot quente, motivo normal, e o U-Boot
-#    volta para o Android de fábrica com a RAM (e o log) preservada.
+# 4. ~20 s depois do início faz o reset de emergência (sysrq b): reboot quente, motivo
+#    normal, e o U-Boot volta para o Android de fábrica com a RAM (e o log) preservada.
+#    O sysrq b não passa pelo shutdown dos drivers. No primeiro teste no aparelho o
+#    `reboot -f` apagou a ventoinha (shutdown do gpio-leds) e o reset não aconteceu.
+#
+# Logo no começo o watchdog de hardware é armado e nunca mais alimentado: se qualquer
+# coisa travar (inclusive o próprio reset), ele reinicia o SoC a quente em WATCHDOG_TIMEOUT
+# segundos e o log no pstore sobrevive.
 #
 # A única escrita no eMMC é a do passo 2.
 
@@ -18,6 +24,8 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 REPORT_AT=10
 REBOOT_AT=20
 SAFETY_REBOOT_AT=45
+WATCHDOG_TIMEOUT=60
+WATCHDOG=/dev/watchdog
 
 mount_basics() {
 	mount -t proc proc /proc
@@ -45,10 +53,19 @@ sleep_until() {
 	sleep $(($1 - now))
 }
 
+# Reset de emergência: sem o shutdown dos drivers, direto para o handler de restart.
 reboot_now() {
 	log "$1"
 	sync
-	reboot -f
+	echo b >/proc/sysrq-trigger
+}
+
+# O busybox `watchdog` alimenta uma vez ao abrir e depois só a cada hora: na prática o
+# watchdog dispara WATCHDOG_TIMEOUT segundos depois daqui, se nada reiniciar antes.
+arm_watchdog() {
+	[ -c "$WATCHDOG" ] || { log "watchdog: $WATCHDOG ausente"; return; }
+	watchdog -T "$WATCHDOG_TIMEOUT" -t 3600 "$WATCHDOG" || { log "watchdog: falha ao armar"; return; }
+	log "watchdog: armado, dispara em $WATCHDOG_TIMEOUT s"
 }
 
 # Se algo travar no relatório, o reboot acontece mesmo assim.
@@ -126,6 +143,7 @@ write_report() {
 
 main() {
 	mount_basics
+	arm_watchdog
 	start=$(read_uptime)
 	start_safety_reboot $((start + SAFETY_REBOOT_AT))
 	log "marco1: início (t=$start s)"
@@ -135,8 +153,8 @@ main() {
 	write_report
 	log "relatório: fim"
 	sleep_until $((start + REBOOT_AT))
-	reboot_now "marco1: fim, reboot -f (t=$(read_uptime) s)"
-	# reboot -f não volta; se voltar, o reboot de segurança ainda está agendado.
+	reboot_now "marco1: fim, sysrq b (t=$(read_uptime) s)"
+	# O sysrq b não volta; se voltar, o reboot de segurança e o watchdog ainda estão de pé.
 	while :; do sleep 60; done
 }
 

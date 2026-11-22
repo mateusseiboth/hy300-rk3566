@@ -6,7 +6,8 @@ bootloader_message (como o Android 12 deixa depois do `adb reboot recovery`), bo
 kernel com o initramfs e confere:
   - o /init achou a misc pelo nome, apagou só os 2048 bytes do BCB e não tocou no resto;
   - o relatório saiu no log do kernel;
-  - o reboot -f aconteceu perto dos 20 s (o QEMU sai com -no-reboot).
+  - o /init tentou armar o watchdog (o virt não tem um, então registra a ausência);
+  - o reset de emergência (sysrq b) aconteceu perto dos 20 s (o QEMU sai com -no-reboot).
 
 O kernel precisa do config do marco 1 mais o fragmento qemu.config deste diretório
 (PL011 e virtio). O build-marco1.sh faz esse build à parte quando o QEMU está instalado.
@@ -28,8 +29,9 @@ CMDLINE = "console=ttyAMA0 hy300.test=marco1 panic=10 initcall_blacklist=rockchi
 EXPECTED = (
     "hy300: [misc] misc: comando 'boot-recovery' apagado",
     "hy300: [init] relatório: fim",
-    "hy300: [init] marco1: fim, reboot -f",
-    "reboot: Restarting system",
+    "hy300: [init] watchdog: /dev/watchdog ausente",
+    "hy300: [init] marco1: fim, sysrq b",
+    "sysrq: Resetting",
 )
 
 
@@ -65,7 +67,7 @@ def run_qemu(image, initramfs, disk):
 
 
 def find_reboot_time(log):
-    match = re.search(r"\[\s*([0-9.]+)\] reboot: Restarting system", log)
+    match = re.search(r"\[\s*([0-9.]+)\] sysrq: Resetting", log)
     return float(match.group(1)) if match else None
 
 
