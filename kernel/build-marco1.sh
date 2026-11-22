@@ -77,6 +77,14 @@ require_same() {
 	cmp -s "$1" "$2" || { echo "FALHOU: $3"; exit 1; }
 }
 
+# O U-Boot de fábrica troca o próprio DT pelo rk-kernel.dtb do resource e só reconhece o
+# eMMC por "snps,dwcmshc-sdhci" (ou rk3588). Sem esse compatible ele perde o eMMC, não lê
+# a imagem e trava antes do logo: foi o que aconteceu nos primeiros testes do marco 1.
+require_uboot_emmc() {
+	fdtget "$1" /mmc@fe310000 compatible | grep -qw 'snps,dwcmshc-sdhci' ||
+		{ echo "FALHOU: o eMMC do DTB não tem o compatible que o U-Boot de fábrica conhece"; exit 1; }
+}
+
 verify_image() {
 	local check="$WORK/check"
 	(($(stat -c %s "$OUT") <= RECOVERY_PART_SIZE)) || { echo "FALHOU: maior que a partição"; exit 1; }
@@ -87,6 +95,7 @@ verify_image() {
 	require_same "$check/ramdisk" "$INITRAMFS" "ramdisk"
 	require_same "$check/dtb" "$DTB" "seção dtb"
 	require_same "$check/res/rk-kernel.dtb" "$DTB" "rk-kernel.dtb do resource"
+	require_uboot_emmc "$check/res/rk-kernel.dtb"
 	grep -q "$MARK" "$check/header.json" || { echo "FALHOU: cmdline sem a marca"; exit 1; }
 	sha256sum "$OUT" | tee "$OUT.sha256"
 	echo "ok: $(stat -c %s "$OUT") bytes (partição: $RECOVERY_PART_SIZE)"
