@@ -57,13 +57,18 @@ build_initramfs() {
 	"$REPO/kernel/initramfs-test/build.sh" "$KSRC" "$INITRAMFS" "$WORK/initramfs"
 }
 
-# O U-Boot de fábrica lê o DTB do kernel da seção dtb do header v2 e, sem ela, do
-# rk-kernel.dtb do resource.img (seção second). Os dois recebem o DTB novo.
+# O U-Boot de fábrica usa o rk-kernel.dtb do resource.img (seção second) como DT próprio e
+# trava com o DT do 6.1. O resource fica o de fábrica; o kernel usa o DT embutido
+# (CONFIG_HY300_BUILTIN_DTB) e só copia o /chosen e a memória do DT do U-Boot.
 build_resource() {
 	echo ">> resource.img"
 	python3 "$REPO/tools/rk_resource.py" boot-extract "$FACTORY/recovery.img" "$WORK/resource-fabrica.img" >/dev/null
-	python3 "$REPO/tools/rk_resource.py" replace "$WORK/resource-fabrica.img" rk-kernel.dtb "$DTB" \
-		"$WORK/resource-marco1.img" >/dev/null
+	cp "$WORK/resource-fabrica.img" "$WORK/resource-marco1.img"
+}
+
+# O DT embutido tem o modelo do HY300; o de fábrica não.
+require_builtin_dtb() {
+	grep -qa 'HY300 Projector' "$1" || { echo "FALHOU: Image sem o DT embutido do HY300"; exit 1; }
 }
 
 build_image() {
@@ -81,7 +86,7 @@ require_same() {
 # eMMC por "snps,dwcmshc-sdhci" (ou rk3588). Sem esse compatible ele perde o eMMC, não lê
 # a imagem e trava antes do logo: foi o que aconteceu nos primeiros testes do marco 1.
 require_uboot_emmc() {
-	fdtget "$1" /mmc@fe310000 compatible | grep -qw 'snps,dwcmshc-sdhci' ||
+	grep -qa 'snps,dwcmshc-sdhci' "$1" ||
 		{ echo "FALHOU: o eMMC do DTB não tem o compatible que o U-Boot de fábrica conhece"; exit 1; }
 }
 
@@ -94,7 +99,8 @@ verify_image() {
 	require_same "$check/kernel" "$IMAGE" "kernel"
 	require_same "$check/ramdisk" "$INITRAMFS" "ramdisk"
 	require_same "$check/dtb" "$DTB" "seção dtb"
-	require_same "$check/res/rk-kernel.dtb" "$DTB" "rk-kernel.dtb do resource"
+	require_same "$check/second" "$WORK/resource-fabrica.img" "resource de fábrica"
+	require_builtin_dtb "$check/kernel"
 	require_uboot_emmc "$check/res/rk-kernel.dtb"
 	grep -q "$MARK" "$check/header.json" || { echo "FALHOU: cmdline sem a marca"; exit 1; }
 	sha256sum "$OUT" | tee "$OUT.sha256"
