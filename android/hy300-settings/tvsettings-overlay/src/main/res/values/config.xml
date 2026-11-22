@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- O build da TXCZ usa "Classic", cujo device.xml foi enxugado (sem Armazenamento, Protetor
-         de tela, Acessibilidade, Reiniciar). "X" é o sabor completo que a Rockchip mantém no
-         mesmo APK (main_prefs_x + device_x, com Ecrã e Avançado). -->
-    <string name="config_tvSettingsFlavor" translatable="false" tools:ignore="MissingTranslation">X</string>
+         de tela, Acessibilidade, Reiniciar). "TwoPanel" é o sabor do AOSP 12 (o do LineageOS):
+         main_prefs + device_two_panel, em dois painéis.
+         "X" e "Vendor" não servem: o NetworkFragment da Rockchip remove a categoria "vpn", que
+         não existe no network_x.xml, e o TvSettings fecha com NullPointerException ao abrir. -->
+    <string name="config_tvSettingsFlavor" translatable="false" tools:ignore="MissingTranslation">TwoPanel</string>
 </resources>
