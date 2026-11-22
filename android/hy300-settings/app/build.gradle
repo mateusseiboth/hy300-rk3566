@@ -1,0 +1,46 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'io.github.hy300.settings'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.hy300.settings'
+        minSdk 30
+        targetSdk 32
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // Assinado com a chave debug para facilitar a instalação local.
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    lint {
+        abortOnError false
+        // targetSdk 32 é proposital (aparelho com Android 12L).
+        disable 'ExpiredTargetSdkVersion', 'OldTargetApi'
+    }
+}
+
+dependencies {
+    implementation 'androidx.leanback:leanback:1.2.0'
+    implementation 'androidx.leanback:leanback-preference:1.2.0'
+    implementation 'androidx.preference:preference:1.2.1'
+    implementation 'androidx.fragment:fragment:1.6.2'
+    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')
+    testImplementation 'junit:junit:4.13.2'
+}

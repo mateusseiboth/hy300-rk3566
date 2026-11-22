@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lidos por nome pelo TvSettings (com.android.tv.set, MainFragment.updateSoundSettings). -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/sound_pref_title,@string/sound_pref_summary,@drawable/sound_icon" />

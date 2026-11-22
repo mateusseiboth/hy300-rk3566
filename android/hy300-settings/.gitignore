@@ -1,0 +1,13 @@
+# Build outputs
+build/
+app/build/
+.gradle/
+.kotlin/
+local.properties
+*.apk
+*.aab
+*.idea/
+*.iml
+captures/
+# O .gitignore da raiz ignora *.jar; o wrapper precisa ser versionado
+!gradle/wrapper/gradle-wrapper.jar

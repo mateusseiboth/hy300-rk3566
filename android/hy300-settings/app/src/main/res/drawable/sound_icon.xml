@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <!-- corpo do projetor -->
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M3,8h18a1,1 0,0 1,1 1v7a1,1 0,0 1,-1 1h-1v1h-2v-1H6v1H4v-1H3a1,1 0,0 1,-1 -1V9a1,1 0,0 1,1 -1zM4,10v5h8v-5zM16.5,9.5a3,3 0,1 0,0.001 0zM16.5,11a1.5,1.5 0,1 1,-0.001 0z"/>
+    <!-- feixe -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M15,4l1.5,3h-1l-1.5,-3zM18,4h1l-0.5,3h-1z"/>
+</vector>

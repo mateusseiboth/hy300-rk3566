@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Projetor</string>
+    <string name="app_title">Configurações do projetor</string>
+    <string name="loading">Carregando…</string>
+
+    <!-- Integração com o TvSettings (com.android.tv.set): item "sound" do menu principal.
+         O TvSettings lê estes três recursos pelo nome no pacote que trata a ação
+         com.android.tv.set.SOUND. Não renomear. -->
+    <string name="sound_pref_title">Projetor</string>
+    <string name="sound_pref_summary">Keystone, foco, fonte e imagem</string>
+
+    <!-- Menu principal -->
+    <string name="cat_projection">Projeção</string>
+    <string name="cat_projection_summary">Keystone, zoom, proporção e modo de instalação</string>
+    <string name="cat_auto_ks">Keystone automático</string>
+    <string name="cat_focus">Foco</string>
+    <string name="cat_focus_summary">Ajuste manual do motor de foco</string>
+    <string name="cat_source">Fonte e inicialização</string>
+    <string name="cat_image">Imagem</string>
+    <string name="cat_image_summary">Brilho, contraste, saturação, matiz e perfil de cor</string>
+    <string name="cat_other">Outros</string>
+    <string name="cat_about">Diagnóstico</string>
+    <string name="cat_about_summary">Permissões e estado das props</string>
+    <string name="open_android_settings">Configurações do Android</string>
+
+    <!-- Projeção -->
+    <string name="ks_corners">Correção de 4 cantos</string>
+    <string name="ks_corners_summary">Mover cada canto com o direcional</string>
+    <string name="ks_trapezoid">Correção trapezoidal (V/H)</string>
+    <string name="ks_trapezoid_summary">V: %1$d  H: %2$d</string>
+    <string name="ks_zoom">Zoom</string>
+    <string name="ks_zoom_summary">%1$d%%</string>
+    <string name="ks_ratio">Proporção</string>
+    <string name="ks_mode">Modo de instalação</string>
+    <string name="ks_pattern">Mostrar padrão de teste</string>
+    <string name="ks_reset">Restaurar keystone</string>
+    <string name="ks_reset_summary">Zera cantos e trapézio, zoom 100%. Mantém o modo de instalação.</string>
+    <string name="ks_reset_done">Keystone restaurado</string>
+    <string name="ks_current">Valores atuais</string>
+    <string name="ks_info_corners">Canto: %1$s  (ajuste %2$s px)\n↑↓←→ mover · OK próximo canto · MENU passo: %3$s · 0/Del restaurar · Voltar sair</string>
+    <string name="ks_info_trapezoid">Trapézio  V: %1$d   H: %2$d\n↑ estreita o topo · ↓ a base · ← a esquerda · → a direita\nMENU passo: %3$s · 0/Del restaurar · Voltar sair</string>
+    <string name="ks_info_zoom">Zoom: %1$d%%\n←→ ou ↑↓ ajustar (passo 5, ou 1 no passo fino) · 0/Del = 100%% · Voltar sair</string>
+    <string name="ks_info_pattern">Padrão de teste · Voltar para sair</string>
+    <string-array name="step_names">
+        <item>fino (1 px)</item>
+        <item>normal (5 px)</item>
+        <item>grosso (20 px)</item>
+    </string-array>
+    <string-array name="corner_names">
+        <item>superior esquerdo</item>
+        <item>inferior esquerdo</item>
+        <item>superior direito</item>
+        <item>inferior direito</item>
+    </string-array>
+    <string-array name="ratio_entries">
+        <item>16:9</item>
+        <item>4:3</item>
+    </string-array>
+    <string-array name="ratio_values">
+        <item>0</item>
+        <item>1</item>
+    </string-array>
+    <string-array name="mode_entries">
+        <item>Mesa, frontal</item>
+        <item>Mesa, traseira (espelho horizontal)</item>
+        <item>Teto, frontal (180°)</item>
+        <item>Teto, traseira (espelho vertical)</item>
+    </string-array>
+    <string-array name="mode_values">
+        <item>0</item>
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+    </string-array>
+
+    <!-- Keystone automático -->
+    <string name="auto_ks_title">Keystone automático</string>
+    <string name="auto_ks_running">Corrigindo a inclinação pelo acelerômetro</string>
+    <string name="auto_ks_enable">Ativar</string>
+    <string name="auto_ks_enable_summary">Corrige a inclinação vertical pelo acelerômetro, somando ao ajuste manual. Calibre na posição instalada antes de ativar.</string>
+    <string name="auto_ks_calibrate">Calibrar agora</string>
+    <string name="auto_ks_calibrate_summary">Deixe o projetor nivelado e parado. Atual: %1$s</string>
+    <string name="auto_ks_calibrating">Calibrando… mantenha o projetor parado</string>
+    <string name="auto_ks_calibrated">Calibrado em %1$.1f°</string>
+    <string name="auto_ks_invert">Inverter direção</string>
+    <string name="auto_ks_invert_summary">Use se a correção estreitar o lado errado</string>
+    <string name="auto_ks_not_calibrated">não calibrado</string>
+    <string name="auto_ks_status">Estado</string>
+
+    <!-- Foco -->
+    <string name="focus_help">Segure ← / → (ou ↓ / ↑) para ajustar o foco · Voltar sair</string>
+    <string name="focus_moving">Ajustando…</string>
+    <string name="focus_limit">Fim de curso do motor</string>
+    <string name="focus_unavailable">Motor de foco não encontrado</string>
+
+    <!-- Fonte -->
+    <string name="src_open_hdmi">Abrir HDMI agora</string>
+    <string name="src_boot">Ao ligar, abrir</string>
+    <string name="src_boot_home">Tela inicial</string>
+    <string name="src_boot_hdmi">Entrada HDMI</string>
+    <string name="src_boot_app">Aplicativo: %1$s</string>
+    <string name="src_pick_app">Escolher aplicativo</string>
+    <string name="src_hdmi_missing">Visualizador HDMI não encontrado</string>
+    <string name="src_saved">Salvo</string>
+
+    <!-- Imagem -->
+    <string name="img_brightness">Brilho</string>
+    <string name="img_contrast">Contraste</string>
+    <string name="img_saturation">Saturação</string>
+    <string name="img_hue">Matiz</string>
+    <string name="img_reset">Restaurar padrão (50)</string>
+
+    <!-- Outros -->
+    <string name="other_a2dp">Modo caixa de som Bluetooth (A2DP sink)</string>
+    <string name="other_a2dp_summary">persist.bluetooth.rka2dpsink. Reinicie o Bluetooth ou o aparelho para aplicar.</string>
+    <string name="other_f12">Tecla de configurações (F12) abre este app</string>
+    <string name="other_f12_summary">Usa um serviço de acessibilidade que intercepta a tecla antes do framework</string>
+    <string name="other_f12_need_perm">Sem WRITE_SECURE_SETTINGS. Rode: adb shell pm grant io.github.hy300.settings android.permission.WRITE_SECURE_SETTINGS</string>
+    <string name="other_txcz">Abrir app de configurações da fabricante (TXCZ)</string>
+
+    <!-- Diagnóstico -->
+    <string name="diag_run">Testar permissões</string>
+    <string name="diag_system">Instalado como app de sistema</string>
+
+    <string name="f12_service_desc">Faz a tecla de configurações do controle (F12) abrir as Configurações do projetor em vez do app TXCZ.</string>
+    <string name="write_failed">Falha ao gravar (veja Diagnóstico)</string>
+</resources>
