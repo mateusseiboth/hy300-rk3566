@@ -31,7 +31,9 @@ connect_root() {
 	adb root >/dev/null
 	sleep 3
 	adb wait-for-device
-	[[ "$(adb shell uname -m | tr -d '\r')" == aarch64 ]] || fail "kernel do aparelho não é arm64"
+	# O shell do adb é 32 bits, então o kernel arm64 responde `armv8l` para ele. A prova de
+	# que o binário aarch64 roda é o --dry-run dele em push_binary.
+	[[ "$(adb shell uname -m | tr -d '\r')" =~ ^(aarch64|armv8l)$ ]] || fail "kernel do aparelho não é ARMv8"
 }
 
 # Com um comando no BCB, o U-Boot iria pela misc (e ficaria preso nela): não seguir.

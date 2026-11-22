@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Grava uma imagem de teste na partição `recovery` (o slot de teste do kernel) e confere o
-# SHA-256 no próprio aparelho. Manda comprimido: a recovery tem dezenas de MB de zeros.
+# SHA-256 no próprio aparelho, antes de gravar (cópia em /data/local/tmp) e depois.
 #
 # Uso: ./flash-test-recovery.sh imagem.img [backup_de_fabrica]
 # Reverter: ./flash-test-recovery.sh ~/hy300-backup/recovery.img
@@ -24,8 +24,15 @@ current="$(device_hash)"
 is_known "$current" || { echo "recovery atual ($current) não tem backup conhecido; abortando"; exit 1; }
 
 want="$(sha256sum "$IMG" | cut -c1-64)"
-echo ">> gravando $(basename "$IMG") na recovery"
-gzip -1 -c "$IMG" | adb exec-in "gzip -dc > $PART && sync"
+TMP=/data/local/tmp/test-slot.img
+# adb push é binário e comprime no caminho. Não usar `adb exec-in` para dados binários:
+# nesta versão a entrada passa por um terminal e os bytes chegam alterados.
+echo ">> enviando $(basename "$IMG")"
+adb push "$IMG" "$TMP" >/dev/null
+pushed="$(adb shell "sha256sum $TMP" | cut -c1-64)"
+[[ "$pushed" == "$want" ]] || { adb shell "rm -f $TMP"; echo "FALHOU: cópia chegou com hash $pushed"; exit 1; }
+echo ">> gravando na recovery"
+adb shell "dd if=$TMP of=$PART bs=4M 2>/dev/null && sync; rm -f $TMP"
 padded="$(adb shell "head -c $(stat -c %s "$IMG") $PART | sha256sum" | cut -c1-64)"
 [[ "$padded" == "$want" ]] || { echo "FALHOU: hash gravado $padded != $want"; exit 1; }
 device_hash >> "$KNOWN"
