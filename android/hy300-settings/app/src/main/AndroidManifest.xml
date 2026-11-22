@@ -46,6 +46,22 @@
             </intent-filter>
         </activity>
 
+        <!-- android.settings.SETTINGS: o TvSettings do aparelho (com.android.tv.set) não declara
+             esta ação, e a única outra activity que a tratava era a tela da TXCZ (desativada por
+             system/disable-txcz-settings.sh). Repassa para com.android.tv.set/.MainSettings. -->
+        <activity
+            android:name=".AndroidSettingsActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter android:priority="1">
+                <action android:name="android.settings.SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".KeystoneActivity"
             android:exported="true"
