@@ -17,8 +17,6 @@ WORK="${3:-$HOME/hy300-work/marco1/initramfs}"
 CROSS="${CROSS_COMPILE:-aarch64-linux-gnu-}"
 JOBS="${JOBS:-$(nproc)}"
 
-MUSL_VERSION=1.2.5
-MUSL_SHA256=a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4
 BUSYBOX_VERSION=1.37.0
 BUSYBOX_SHA256=3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4
 
@@ -26,41 +24,11 @@ DL="$WORK/dl"
 SYSROOT="$WORK/sysroot"
 ROOTFS="$WORK/rootfs"
 
-fetch() {
-	local url="$1" sha="$2" file
-	file="$DL/$(basename "$1")"
-	mkdir -p "$DL"
-	[[ -f "$file" ]] || curl -sSfL -o "$file.part" "$url"
-	[[ -f "$file" ]] || mv "$file.part" "$file"
-	echo "$sha  $file" | sha256sum -c --quiet -
-}
-
-extract() {
-	local archive="$1" dest="$2"
-	rm -rf "$dest"
-	mkdir -p "$dest"
-	tar -xf "$archive" -C "$dest" --strip-components=1
-}
+# shellcheck source=kernel/lib-musl.sh
+. "$HERE/../lib-musl.sh"
 
 install_kernel_headers() {
 	make -s -C "$KSRC" O="$WORK/kheaders" ARCH=arm64 INSTALL_HDR_PATH="$SYSROOT" headers_install
-}
-
-build_musl() {
-	[[ -x "$SYSROOT/bin/musl-gcc" ]] && { provide_empty_libatomic; return; }
-	fetch "https://musl.libc.org/releases/musl-$MUSL_VERSION.tar.gz" "$MUSL_SHA256"
-	extract "$DL/musl-$MUSL_VERSION.tar.gz" "$WORK/musl"
-	(cd "$WORK/musl" &&
-		./configure --target=aarch64-linux-gnu --prefix="$SYSROOT" --disable-shared \
-			--enable-wrapper=gcc CROSS_COMPILE="$CROSS" CC="${CROSS}gcc" >/dev/null &&
-		make -s -j"$JOBS" && make -s install)
-	provide_empty_libatomic
-}
-
-# O GCC 16 sempre linka -latomic_asneeded, e o cross do Fedora não traz a libatomic do
-# alvo. O busybox não usa atomics da libatomic: um arquivo vazio basta.
-provide_empty_libatomic() {
-	[[ -f "$SYSROOT/lib/libatomic_asneeded.a" ]] || "${CROSS}ar" rc "$SYSROOT/lib/libatomic_asneeded.a"
 }
 
 # defconfig do busybox, estático. TC não compila com headers novos e não é usado; o

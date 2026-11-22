@@ -44,6 +44,8 @@ roteiro de teste em [`../docs/kernel-6.1.md`](../docs/kernel-6.1.md).
 | `initramfs-test/hy300-test.sh` | funções do init (testadas em `tests/test_initramfs_misc.py`) |
 | `initramfs-test/build.sh` | busybox estático (musl, aarch64) compilado do fonte e o cpio |
 | `initramfs-test/smoke-qemu.py`, `qemu.config` | teste de fumaça do init num 6.1 no QEMU virt |
+| `reboot-recovery/` | binário estático que reinicia para a recovery só pelo registrador de reboot-mode, sem BCB (usado por `scripts/reboot-to-test-slot.sh`) |
+| `lib-musl.sh` | baixa e compila o musl (comum ao initramfs e ao `reboot-recovery`) |
 
 ## Próximos passos
 

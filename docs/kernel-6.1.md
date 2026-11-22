@@ -229,25 +229,90 @@ uptime vinha vazio e o reboot de segurança disparava na hora.
 | DVFS de CPU, DDR e barramentos | drivers no BSP | ligar um por vez; o DMC depende do TF-A de fábrica |
 | NPU | `ROCKCHIP_RKNPU` | desligada também na fábrica |
 
+## Como entrar na recovery sem tocar na misc
+
+O `adb reboot recovery` do Android 12 grava `boot-recovery` no BCB da `misc` (o init do
+Android faz isso quando o comando está vazio). O U-Boot volta para a recovery enquanto esse
+comando estiver lá, e quem apaga seria o nosso `/init`. Se o kernel de teste morresse antes,
+todo boot cairia de novo na recovery, e tirar da tomada não resolveria. Por isso o teste não
+usa mais o `adb reboot recovery`.
+
+O caminho novo usa só o registrador do `reboot-mode`:
+
+1. `scripts/reboot-to-test-slot.sh` manda o `reboot-recovery` (`kernel/reboot-recovery/`,
+   C estático com musl, aarch64) para `/data/local/tmp` e roda como root.
+2. O binário faz `sync`, escreve `u` em `/proc/sysrq-trigger` (remonta só-leitura tudo que tem
+   dispositivo de bloco), espera o `/proc/mounts` mostrar isso (até 10 s), faz `sync` de novo e
+   chama `reboot(0xfee1dead, 0x28121969, LINUX_REBOOT_CMD_RESTART2, "recovery")`. O init do
+   Android fica de fora, então ninguém escreve na `misc`.
+3. O kernel de fábrica (`syscon-reboot-mode` no `pmugrf` `0xfdc20000`, `offset = 0x200`) grava
+   `mode-recovery = 0x5242c303` em `0xfdc20200`. É o mesmo valor depois do overlay da
+   `recovery_dtbo`.
+4. O PSCI faz o reset global do SoC. O PMU_GRF fica no domínio de energia que esse reset não
+   alcança, então o valor sobrevive ao reboot quente. É o mesmo mecanismo do
+   `adb reboot bootloader` de fábrica. Sem energia o registrador zera, porque ele não tem
+   bateria nem cópia em memória não volátil.
+5. O U-Boot lê `0xfdc20200` e, com o BCB vazio, mostra "boot mode: recovery (cmd)", sobe a
+   recovery e grava `0x5242c300` (normal) no registrador. Só vale para um boot.
+
+O que o U-Boot de fábrica faz com cada valor (desmontagem do `rockchip_get_boot_mode` do
+`uboot.img`, função em `0xa02d10`; todos os chamadores escolhem a recovery só com o modo 1):
+
+| Registrador | Mensagem | Modo | Limpa o registrador? | Partição |
+|---|---|---|---|---|
+| `0x5242c300` normal | "boot mode: normal" | 0 | sim | boot |
+| `0x5242c303` recovery | "boot mode: recovery (cmd)" | 1 | sim, volta para normal | recovery |
+| `0x5242c307` panic | "boot mode: panic" | 7 | não | boot |
+| `0x5242c308` watchdog | "boot mode: watchdog" | 8 | não | boot |
+| `0x5242c301` loader | "boot mode: loader" | 3 | sim | Rockusb |
+| `0x5242c309` fastboot | "boot mode: bootloader" | 2 | sim | fastboot do U-Boot |
+| qualquer outro, ou 0 depois de faltar energia | "boot mode: None---" | 10 | não | boot |
+
+A ordem de prioridade no U-Boot é: loader/fastboot pelo registrador, depois o BCB da `misc`,
+depois o resto do registrador. Um `boot-recovery` no BCB ganha do registrador. Por isso o
+`reboot-to-test-slot.sh` se recusa a seguir com qualquer comando no BCB.
+
+O que o 6.1 grava quando reinicia sozinho (`drivers/power/reset/reboot-mode.c` do BSP):
+
+- `reboot -f` do nosso init: comando vazio, grava `mode-normal` `0x5242c300`. Vai para a boot.
+- panic (inclusive softlockup e hung task): o notificador de panic grava `mode-panic`
+  `0x5242c307`, e o restart seguinte não sobrescreve. Vai para a boot.
+- reset por watchdog ou pela proteção térmica do TSADC: ninguém escreve; fica o `0x5242c300` que o
+  U-Boot deixou ao entrar na recovery. Vai para a boot.
+- só um `reboot recovery` ou `reboot fastboot` explícito gravaria `0x5242c303` de novo, e o
+  initramfs de teste não faz isso.
+
+Nenhum desses caminhos leva de volta à recovery. O `/init` continua apagando um
+`boot-recovery` do BCB, se aparecer, como segunda proteção.
+
+O preço é um reboot sem o desligamento normal do Android: os serviços não param. O `sync`
+duplo e o sysrq `u` deixam os sistemas de arquivos de bloco limpos antes do reboot. Se alguma
+montagem continuar rw depois de 10 s, o binário avisa e reinicia mesmo assim, porque o `sync`
+já foi feito.
+
+Compilar e testar no host:
+
+```bash
+kernel/reboot-recovery/build.sh          # ~/hy300-work/marco1/reboot-recovery/reboot-recovery
+python3 -m unittest tests.test_reboot_recovery tests.test_reboot_to_test_slot
+```
+
+Os testes compilam os testes de unidade em C com o gcc do host e rodam o binário aarch64 no
+`qemu-aarch64-static -strace` com um sysrq e um `/proc/mounts` falsos. Como usuário comum, o
+kernel do host recusa o reboot com EPERM. O `strace` do host decodifica a chamada:
+`reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, LINUX_REBOOT_CMD_RESTART2, "recovery")`. O
+script é testado com um `adb` falso: recusa com BCB preenchido ou com outra imagem na recovery,
+e o `--dry-run` nunca roda o reboot de verdade.
+
 ## Riscos do primeiro boot
 
-1. **Loop na recovery.** O `adb reboot recovery` do Android 12 grava `boot-recovery` na `misc`
-   e o U-Boot volta para a recovery enquanto o comando estiver lá. Quem apaga é o nosso `/init`.
-   Se o kernel morrer antes disso (DT errado, eMMC sem subir, travamento cedo), todo boot cai de
-   novo na recovery de teste. Tirar da tomada não resolve, porque a `misc` continua marcada. Sair
-   disso exige gravar a recovery de fábrica sem Android: modo loader do U-Boot ou MaskROM por um
-   cabo USB A-A na única porta, com `rkdeveloptool`. Rodar o marco 0 antes confirma o caminho da
-   `misc`, mas não elimina o risco.
-   Alternativa sem esse risco, se o usuário preferir: entrar na recovery só pelo registrador do
-   `reboot-mode`, sem BCB. Um binário estático rodando como root faria `sync`, remontaria os
-   sistemas de arquivos só leitura (`echo u > /proc/sysrq-trigger`) e chamaria
-   `reboot(LINUX_REBOOT_CMD_RESTART2, "recovery")`. O kernel de fábrica grava `0x5242c303`, o
-   U-Boot sobe a recovery uma vez e limpa o registrador. Se o kernel de teste travar, tirar da
-   tomada volta ao Android. O custo é um desligamento sem o roteiro normal do Android. Não está
-   implementado.
-2. **Travamento sem panic.** Panic, oops, softlockup e hung task reiniciam em 10 s. Um travamento
-   que nenhum detector pega fica parado, porque o watchdog não é armado. Aí é tirar da tomada,
-   e o reboot frio perde a RAM e o log. Com a `misc` ainda marcada, volta ao risco 1.
+1. **Loop na recovery.** Com o caminho acima o BCB fica vazio, então um kernel de teste que
+   morre cedo não prende o aparelho: tirar da tomada zera o registrador e o U-Boot sobe o
+   Android. O risco volta se alguém usar `adb reboot recovery` ou se o BCB já tiver comando (o
+   script confere). O BCB legado em 16 KiB não conta, o U-Boot não lê aquele bloco.
+2. **Travamento sem panic.** Panic, oops, softlockup e hung task reiniciam em 10 s. Um
+   travamento que nenhum detector pega fica parado, porque o watchdog não é armado. Aí é tirar
+   da tomada. O reboot frio perde a RAM e o log, mas volta ao Android.
 3. **Log incompleto.** O pstore só guarda o que vier depois do probe do ramoops (o console
    repassa o buffer desde o começo). Um crash antes disso não deixa log. Se houver panic, o
    `dmesg-ramoops-0` também aparece, com deflate, que o 4.19 lê.
@@ -265,14 +330,32 @@ uptime vinha vazio e o reboot de segurança disparava na hora.
 
 ```bash
 # 0. marco 0 já feito, recovery de fábrica gravada e Android normal
+kernel/reboot-recovery/build.sh
 scripts/flash-test-recovery.sh ~/hy300-work/marco1/recovery-marco1.img
-adb reboot recovery
+scripts/reboot-to-test-slot.sh --dry-run    # confere BCB vazio e roda o binário em modo seco
+scripts/reboot-to-test-slot.sh              # confere a imagem na recovery e reinicia
 # esperar ~1 min: o U-Boot sobe o 6.1, o init reinicia sozinho e o Android de fábrica volta.
-# Se em 2 min não voltar, ver "Riscos" antes de tirar da tomada.
 scripts/check-test-boot.sh hy300.test=marco1
 adb pull /sys/fs/pstore/console-ramoops-0 ~/hy300-work/marco1/console-marco1.txt
 scripts/flash-test-recovery.sh ~/hy300-backup/recovery.img   # recovery de fábrica de volta
 ```
+
+O que acontece em cada falha:
+
+| Falha | O que o usuário vê | O que fazer |
+|---|---|---|
+| O script recusa (BCB com comando, imagem errada na recovery, binário errado) | nada reinicia | ler a mensagem; o aparelho segue no Android |
+| O binário não consegue escrever o sysrq | nada reinicia, "nada foi reiniciado" | o Android segue rodando; ver permissão de root |
+| Montagem que não ficou só-leitura em 10 s | aviso, reboot mesmo assim | nada; o Android pode rodar fsck no boot seguinte |
+| U-Boot não sobe o kernel de teste (DTB, imagem) | volta sozinho ao Android, ou fica no logo | se ficar no logo, tirar da tomada: o Android volta |
+| Kernel trava antes do ramoops | tela parada | esperar 2 min e tirar da tomada; volta ao Android sem log |
+| Kernel dá panic | reboot em 10 s, volta ao Android | `check-test-boot.sh` mostra `dmesg-ramoops-0` |
+| Kernel sobe mas o init falha | reboot de segurança aos 45 s ou panic | log no pstore |
+| Tudo certo | Android volta em ~1 min | `check-test-boot.sh` mostra a marca, as linhas do init e a `misc` "igual à fábrica" |
+
+Só um caminho não volta sozinho tirando da tomada: um BCB com `boot-recovery` gravado por fora
+(por exemplo um `adb reboot recovery` dado por engano). Nesse caso o `/init` de teste apaga o
+comando se chegar a rodar.
 
 O `check-test-boot.sh` mostra a cmdline do boot anterior (deve ter `hy300.test=marco1`), os
 registros do pstore, as linhas `hy300: [init]` e `hy300: [misc]` e o hash da `misc`. O relatório
