@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-/** No boot: religa o keystone automático, se ativado neste app (desligado por padrão). */
+/** No boot: reaplica os LEDs e religa o keystone automático, se ativado neste app (desligado por padrão). */
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context c, Intent intent) {
@@ -12,6 +12,7 @@ public class BootReceiver extends BroadcastReceiver {
         Context app = c.getApplicationContext();
         new Thread(() -> {
             try {
+                LedBoot.apply(app);
                 if (SharedPrefsStore.autoKeystone(app).isEnabled()) {
                     AutoKeystoneService.start(app, false);
                 }

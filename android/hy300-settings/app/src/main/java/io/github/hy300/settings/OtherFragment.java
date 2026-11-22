@@ -1,7 +1,6 @@
 package io.github.hy300.settings;
 
-import android.content.ComponentName;
-import android.content.Intent;
+import android.content.Context;
 import android.widget.Toast;
 
 import androidx.preference.PreferenceScreen;
@@ -11,6 +10,8 @@ import java.util.Map;
 
 public class OtherFragment extends BasePrefs {
     private SwitchPreference a2dp, f12;
+    private final SwitchPreference[] leds = new SwitchPreference[Leds.CONTROLLABLE.size()];
+    private static final int[] LED_TITLES = {R.string.other_led_green, R.string.other_led_red};
 
     @Override
     protected void build(PreferenceScreen s) {
@@ -25,14 +26,19 @@ public class OtherFragment extends BasePrefs {
             if (!ok) Toast.makeText(ctx(), R.string.other_f12_need_perm, Toast.LENGTH_LONG).show();
             return ok;
         });
-        action(s, "txcz", R.string.other_txcz, null, () -> {
-            try {
-                startActivity(new Intent().setComponent(new ComponentName("com.android.tv.settings",
-                        "com.shzhtxcz.txbox.MainActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            } catch (Exception e) {
-                Toast.makeText(ctx(), "App TXCZ não encontrado", Toast.LENGTH_SHORT).show();
-            }
-        });
+        for (int i = 0; i < leds.length; i++) {
+            String led = Leds.CONTROLLABLE.get(i);
+            leds[i] = toggle(s, "led_" + led, LED_TITLES[i], null, (p, v) -> {
+                boolean on = (Boolean) v;
+                boolean ok = Sys.writeFile(Leds.pathOf(led), Leds.valueOf(on));
+                if (!ok) {
+                    Toast.makeText(ctx(), R.string.other_led_failed, Toast.LENGTH_LONG).show();
+                    return false;
+                }
+                ctx().getSharedPreferences(LedBoot.FILE, Context.MODE_PRIVATE).edit().putBoolean(led, on).apply();
+                return true;
+            });
+        }
     }
 
     @Override
@@ -45,5 +51,8 @@ public class OtherFragment extends BasePrefs {
     private void show(Map<String, String> p) {
         if (!isAdded()) return;
         a2dp.setChecked("true".equals(p.get("persist.bluetooth.rka2dpsink")));
+        for (int i = 0; i < leds.length; i++) {
+            leds[i].setChecked(Leds.isOn(Sys.readFile(Leds.pathOf(Leds.CONTROLLABLE.get(i)))));
+        }
     }
 }

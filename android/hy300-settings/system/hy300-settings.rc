@@ -1,0 +1,6 @@
+# Permissões para o app hy300-settings (io.github.hy300.settings) controlar os LEDs indicadores.
+# Instalado em /system/etc/init/ por install-system.sh (overlay do adb remount);
+# reverter com uninstall-system.sh. NUNCA incluir Lcd_power (fonte de luz) nem Fan_h (ventoinha).
+on boot
+    chmod 0666 /sys/class/leds/green/brightness
+    chmod 0666 /sys/class/leds/red/brightness
