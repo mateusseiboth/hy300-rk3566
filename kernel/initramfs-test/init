@@ -1,0 +1,143 @@
+#!/bin/sh
+# /init do initramfs de teste do marco 1 (kernel 6.1 bootando pela partição recovery).
+#
+# 1. monta proc, sys, dev e debugfs (nada do eMMC é montado);
+# 2. apaga o bootloader_message da `misc` só se o comando começar com "boot-recovery",
+#    para o U-Boot não voltar à recovery no próximo boot;
+# 3. espera os drivers terminarem de subir e escreve um relatório no /dev/kmsg, que vai
+#    para o console do pstore (lido depois pelo kernel de fábrica);
+# 4. ~20 s depois do início faz `reboot -f`: reboot quente, motivo normal, e o U-Boot
+#    volta para o Android de fábrica com a RAM (e o log) preservada.
+#
+# A única escrita no eMMC é a do passo 2.
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+# shellcheck source=hy300-test.sh
+. /lib/hy300-test.sh
+
+REPORT_AT=10
+REBOOT_AT=20
+SAFETY_REBOOT_AT=45
+
+mount_basics() {
+	mount -t proc proc /proc
+	mount -t sysfs sysfs /sys
+	mount -t devtmpfs devtmpfs /dev 2>/dev/null
+	mount -t debugfs debugfs /sys/kernel/debug 2>/dev/null
+	mount -t pstore pstore /sys/fs/pstore 2>/dev/null
+	echo on >/proc/sys/kernel/printk_devkmsg
+}
+
+log() {
+	echo "hy300: [init] $*" >>"$KMSG"
+}
+
+# Segundos desde o boot; 0 se /proc não estiver legível (o reboot de segurança precisa
+# de um número).
+read_uptime() {
+	seconds=$(cut -d. -f1 /proc/uptime 2>/dev/null)
+	echo "${seconds:-0}"
+}
+
+sleep_until() {
+	now=$(read_uptime)
+	[ "$now" -lt "$1" ] || return 0
+	sleep $(($1 - now))
+}
+
+reboot_now() {
+	log "$1"
+	sync
+	reboot -f
+}
+
+# Se algo travar no relatório, o reboot acontece mesmo assim.
+start_safety_reboot() {
+	(sleep_until "$1" && reboot_now "reboot de segurança (t=$1 s)") &
+}
+
+handle_misc() {
+	misc=$(wait_for_partition misc 15) || { log "misc: partição não encontrada"; return; }
+	is_misc_size_expected "$misc" || { log "misc: $misc com tamanho inesperado, intocada"; return; }
+	log "misc: /dev/$misc"
+	clear_bcb_if_recovery "/dev/$misc" | send_lines_to_kmsg misc
+}
+
+list_named_partitions() {
+	for uevent in /sys/class/block/*/uevent; do
+		name=$(grep '^PARTNAME=' "$uevent" | cut -d= -f2)
+		[ -n "$name" ] || continue
+		dir=$(dirname "$uevent")
+		echo "$(basename "$dir") $name $(cat "$dir/size") setores"
+	done
+}
+
+show_files() {
+	for file in "$@"; do
+		[ -r "$file" ] || continue
+		echo "$file: $(tr '\000\n' '  ' <"$file")"
+	done
+}
+
+show_drm() {
+	ls /sys/class/drm
+	for connector in /sys/class/drm/card*-*; do
+		[ -d "$connector" ] || continue
+		show_files "$connector/status" "$connector/enabled" "$connector/modes"
+	done
+}
+
+show_thermal() {
+	for zone in /sys/class/thermal/thermal_zone*; do
+		[ -d "$zone" ] || continue
+		echo "$(cat "$zone/type") $(cat "$zone/temp")"
+	done
+}
+
+show_input() {
+	grep -E '^(N|H):' /proc/bus/input/devices
+}
+
+show_mmc() {
+	show_files /sys/class/mmc_host/*/mmc*/name /sys/class/mmc_host/*/mmc*/type
+	cat /sys/kernel/debug/mmc*/ios
+}
+
+write_report() {
+	report_section versao "$KMSG" cat /proc/version
+	report_section cmdline "$KMSG" cat /proc/cmdline
+	report_section modelo "$KMSG" show_files /sys/firmware/devicetree/base/model
+	report_section memoria "$KMSG" head -n 5 /proc/meminfo
+	report_section iomem "$KMSG" cat /proc/iomem
+	report_section particoes "$KMSG" cat /proc/partitions
+	report_section nomes "$KMSG" list_named_partitions
+	report_section mmc "$KMSG" show_mmc
+	report_section drm "$KMSG" show_drm
+	report_section backlight "$KMSG" show_files /sys/class/backlight/*/brightness /sys/class/backlight/*/actual_brightness
+	report_section entrada "$KMSG" show_input
+	report_section leds "$KMSG" ls /sys/class/leds
+	report_section temperatura "$KMSG" show_thermal
+	report_section reguladores "$KMSG" cat /sys/kernel/debug/regulator/regulator_summary
+	report_section gpio "$KMSG" cat /sys/kernel/debug/gpio
+	report_section adiados "$KMSG" cat /sys/kernel/debug/devices_deferred
+	report_section interrupcoes "$KMSG" cat /proc/interrupts
+	report_section pstore "$KMSG" ls -l /sys/fs/pstore
+}
+
+main() {
+	mount_basics
+	start=$(read_uptime)
+	start_safety_reboot $((start + SAFETY_REBOOT_AT))
+	log "marco1: início (t=$start s)"
+	handle_misc
+	sleep_until $((start + REPORT_AT))
+	log "relatório: início"
+	write_report
+	log "relatório: fim"
+	sleep_until $((start + REBOOT_AT))
+	reboot_now "marco1: fim, reboot -f (t=$(read_uptime) s)"
+	# reboot -f não volta; se voltar, o reboot de segurança ainda está agendado.
+	while :; do sleep 60; done
+}
+
+main

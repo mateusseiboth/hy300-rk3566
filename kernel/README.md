@@ -31,10 +31,22 @@ Device tree: ver [`../device-tree/`](../device-tree/) (`*-live.dts` = DT após f
 | IR | `rockchip,remotectl-pwm` (keymap no DT; foco pelo controle tratado no kernel) | |
 | Console | `rockchip,fiq-debugger` → `ttyFIQ0` (UART2 `fe660000`, 1500000 8N1) | |
 
+## Kernel 6.1 (marco 1)
+
+Branch `hy300-6.1` do `kernel-hy300-rk3566`: `rk3566-hy300.dts` portado para o BSP
+`develop-6.1` e o fragmento `rk3566_hy300.config`. Detalhes, diferenças do DT, pendências e o
+roteiro de teste em [`../docs/kernel-6.1.md`](../docs/kernel-6.1.md).
+
+| Arquivo | Conteúdo |
+|---|---|
+| `build-marco1.sh` | monta do zero kernel, DTB, initramfs e `recovery-marco1.img`, e confere a imagem |
+| `initramfs-test/init` | `/init` de teste: limpa o `boot-recovery` da `misc`, relatório no pstore, `reboot -f` em ~20 s |
+| `initramfs-test/hy300-test.sh` | funções do init (testadas em `tests/test_initramfs_misc.py`) |
+| `initramfs-test/build.sh` | busybox estático (musl, aarch64) compilado do fonte e o cpio |
+| `initramfs-test/smoke-qemu.py`, `qemu.config` | teste de fumaça do init num 6.1 no QEMU virt |
+
 ## Próximos passos
 
-1. Fonte: kernel BSP Rockchip 4.19 (ex.: `rockchip-linux/kernel` branch `develop-4.19`) +
-   `.config` acima; os drivers `rk_motor`/`usb-cam-gpio`, sensores `qmi8658` e partes do
-   `remotectl` da TXCZ provavelmente não são públicos (GPL: dá para pedir o fonte ao fabricante).
-2. Validar boot com `boot.img` novo mantendo ramdisk e `resource.img` (DTB) originais.
-3. Mainline: portar `board-nodes.dts` para um `rk3566-hy300.dts` sobre `rk3566.dtsi` upstream.
+1. Gravar e rodar o marco 1 com o usuário presente (roteiro em `../docs/kernel-6.1.md`).
+2. Ligar de volta, um por vez, o que o marco 1 deixou de fora: DVFS, GPU, RK628.
+3. Drivers que não existem no 6.1: Wi-Fi AIC8800 e motor de foco (`/sys/class/motor_cc`).

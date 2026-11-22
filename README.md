@@ -46,7 +46,7 @@ docs/               anotações técnicas (hardware, áudio HDMI, debloat, ROM�
 scripts/            scripts adb (backup, debloat, restauração)
 dumps/              dumps pequenos e não sensíveis (ex.: EDID do RK628)
 reverse-engineering/ notas de RE por componente da TXCZ/Rockchip
-kernel/             patches / DTS (futuro)
+kernel/             config e material do kernel de fábrica, marco 1 (6.1) e initramfs de teste
 android/            app de configurações próprio, overlays, GSI (futuro)
 ```
 
