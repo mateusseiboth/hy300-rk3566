@@ -49,3 +49,28 @@ android/            app de configurações próprio, overlays, GSI (futuro)
 
 > Imagens de partição, APKs e bibliotecas proprietárias **não** são versionados
 > (ver `.gitignore`).
+
+## Como funciona este repositório
+
+Nada proprietário é distribuído aqui. Tudo é **reproduzível a partir do seu próprio aparelho**:
+
+1. **Extraia** — scripts em `scripts/` puxam os binários/partições do *seu* projetor
+   (`backup-partitions.sh`, e futuros `extract-*.sh`).
+2. **Aplique** — modificações são distribuídas como **patches** (smali/diff, overlays, XMLs,
+   props) + script que os aplica sobre o que você extraiu.
+3. **Reverta** — toda modificação tem caminho de volta documentado (backup, `restore-*.sh`,
+   `pm install-existing`, `adb enable-verity`, etc.).
+
+Cada mudança documenta: **o que faz**, **pré-requisitos** (versão exata da ROM — ver
+`ro.build.fingerprint`), **como aplicar**, **como reverter** e **risco**.
+
+ROM de referência:
+`rockchip/rk3566_sgo/rk3566_sgo:12/SQ3A.220705.003.A1/eng.txcz.20240118.181251:userdebug/release-keys`
+
+## ⚠️ Aviso
+
+**Use por sua conta e risco.** Mexer em partições e no sistema pode deixar o aparelho sem
+boot. Faça o backup completo antes de qualquer coisa. Aparelhos vendidos como "HY300"
+usam chips diferentes (Allwinner H713, RK3326, RK3566…): **confirme que o seu é RK3566 com
+a mesma ROM** antes de aplicar qualquer patch. Em último caso, o RK3566 pode ser regravado
+pelo modo MaskROM com o backup feito aqui.
