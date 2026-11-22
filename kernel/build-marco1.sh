@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
-# Monta do zero a imagem de teste do marco 1: kernel BSP Rockchip 6.1 (branch hy300-6.1),
-# DTB do HY300, initramfs de teste e recovery-marco1.img (boot.img header v2) por cima da
-# recovery de fábrica. Não grava nada no aparelho.
+# Monta do zero a imagem de teste do marco 1: kernel 6.1 do HY300, DTB, initramfs de teste e
+# recovery-marco1.img (boot.img header v2) por cima da recovery de fábrica. Não grava nada no
+# aparelho.
 #
 # Uso: kernel/build-marco1.sh [fonte_do_kernel] [dir_de_trabalho] [backup_de_fabrica]
-#   padrões: ~/hy300-handoff/kernel-hy300-rk3566, ~/hy300-work/marco1, ~/hy300-backup
-# Variáveis: KBUILD_OUT (build do kernel, padrão ~/hy300-work/kbuild-6.1), JOBS,
+#   padrões: ~/hy300-handoff/kernel-hy300-rk3566, ~/hy300-work/marco1-ack (bsp:
+#            ~/hy300-work/marco1), ~/hy300-backup
+# Variáveis: KBASE=ack (padrão: kernel Android da Rockchip, branch hy300-ack-6.1, clang) ou
+#            KBASE=bsp (BSP Linux, branch hy300-6.1, GCC); ver kernel/lib-kbase.sh.
+#            CLANG_DIR (padrão: clang-r547379 dos prebuilts do LineageOS, só leitura),
+#            KCONFIG_REQS (padrão ~/android/lineage/kernel/configs/u/android-6.1; na base ack o
+#            build falha se o .config não atender),
+#            KBUILD_OUT (build do kernel, padrão ~/hy300-work/kbuild-ack-6.1), JOBS,
 #            SMOKE=0 para pular o teste de fumaça no QEMU,
 #            WIFI=1 para o modo Wi-Fi (hy300.wifi=1 na cmdline; módulos AIC8800, firmware,
 #            wpa_supplicant e rede no initramfs). Lê WIFI_CREDENTIALS (padrão
@@ -17,10 +23,14 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=kernel/lib-kbase.sh
+. "$REPO/kernel/lib-kbase.sh"
+select_kbase "${KBASE:-ack}"
 KSRC="$(cd "${1:-$HOME/hy300-handoff/kernel-hy300-rk3566}" && pwd)"
-WORK="${2:-$HOME/hy300-work/marco1}"
+WORK="${2:-$KWORK_DEFAULT}"
 FACTORY="${3:-$HOME/hy300-backup}"
-KOUT="${KBUILD_OUT:-$HOME/hy300-work/kbuild-6.1}"
+KOUT="${KBUILD_OUT:-$KOUT_DEFAULT}"
+KCONFIG_REQS="${KCONFIG_REQS:-$HOME/android/lineage/kernel/configs/u/android-6.1}"
 JOBS="${JOBS:-$(nproc)}"
 SMOKE="${SMOKE:-1}"
 WIFI="${WIFI:-0}"
@@ -28,9 +38,7 @@ WIFI_WORK="${WIFI_WORK:-$HOME/hy300-work/wifi}"
 WIFI_CREDENTIALS="${WIFI_CREDENTIALS:-$WIFI_WORK/credenciais.conf}"
 VENDOR_IMG="${VENDOR_IMG:-$HOME/hy300-work/vendor.img}"
 
-CROSS=aarch64-linux-gnu-
 DTB_NAME=rk3566-hy300.dtb
-CONFIGS=(rockchip_linux_defconfig rk3566.config rk3566_hy300.config)
 MARK="hy300.test=marco1 panic=10"
 # Parâmetros extras do teste, depois da marca. console=tty0 por último põe o log do kernel e o
 # do /init na tela (framebuffer); hy300.shutdown_debug=1 troca o fim por reboot -f com log.
@@ -49,7 +57,7 @@ OUT="$WORK/recovery-marco1.img"
 export KBUILD_BUILD_USER=hy300 KBUILD_BUILD_HOST=build
 
 kmake() {
-	make -s -C "$KSRC" O="$1" ARCH=arm64 CROSS_COMPILE="$CROSS" -j"$JOBS" "${@:2}"
+	make -s -C "$KSRC" O="$1" ARCH=arm64 "${KMAKE_TOOLCHAIN[@]}" -j"$JOBS" "${@:2}"
 }
 
 require_factory_recovery() {
@@ -60,9 +68,11 @@ require_factory_recovery() {
 }
 
 build_kernel() {
-	echo ">> kernel: $(git -C "$KSRC" rev-parse --abbrev-ref HEAD) $(git -C "$KSRC" rev-parse --short HEAD)"
+	echo ">> kernel ($KBASE): $(git -C "$KSRC" rev-parse --abbrev-ref HEAD) $(git -C "$KSRC" rev-parse --short HEAD)"
 	mkdir -p "$KOUT"
-	kmake "$KOUT" "${CONFIGS[@]}" >/dev/null
+	kmake "$KOUT" "${KCONFIGS[@]}" >/dev/null 2>&1
+	check_android_kconfig "$KOUT/.config" "$KCONFIG_REQS" "$WORK/kconfig-check.txt" \
+		"$(kmake "$KOUT" kernelversion)" || exit 1
 	kmake "$KOUT" Image modules "rockchip/$DTB_NAME"
 }
 
@@ -74,7 +84,7 @@ build_wifi_root() {
 		--vendor-img "$VENDOR_IMG" --out "$WIFI_ROOT" || exit 1
 	mkdir -p "$WIFI_ROOT/lib/modules/aic8800" "$WIFI_ROOT/usr/sbin"
 	for module in "${AIC_MODULES[@]}"; do
-		"${CROSS}strip" --strip-debug -o "$WIFI_ROOT/lib/modules/aic8800/$module.ko" \
+		"$KSTRIP" --strip-debug -o "$WIFI_ROOT/lib/modules/aic8800/$module.ko" \
 			"$(find "$KOUT/drivers/net/wireless/aic8800" -name "$module.ko")"
 	done
 	"$REPO/kernel/wifi/build-wpa-supplicant.sh" "$WIFI_ROOT/usr/sbin" "$WIFI_WORK/build"
@@ -158,7 +168,7 @@ run_smoke() {
 	echo ">> smoke (QEMU)"
 	local qout="$KOUT-qemu"
 	mkdir -p "$qout"
-	kmake "$qout" "${CONFIGS[@]}" >/dev/null
+	kmake "$qout" "${KCONFIGS[@]}" >/dev/null 2>&1
 	"$KSRC/scripts/kconfig/merge_config.sh" -m -O "$qout" "$qout/.config" \
 		"$REPO/kernel/initramfs-test/qemu.config" >/dev/null
 	kmake "$qout" olddefconfig >/dev/null
@@ -169,6 +179,8 @@ run_smoke() {
 
 main() {
 	mkdir -p "$WORK"
+	require_kbase_tree "$KSRC" || exit 1
+	use_kbase_toolchain || exit 1
 	require_factory_recovery
 	build_kernel
 	build_initramfs
