@@ -9,30 +9,34 @@ toda navegável por D-pad. Telas de ajuste em tela cheia, com padrão de teste. 
 
 ## O que funciona
 
-Legenda: **[testado]** = executado no aparelho e conferido pelas props/logs; **[não testado]** = implementado, sem verificação no aparelho.
+Legenda: **[testado]** = executado no aparelho e conferido (props, logs, `uiautomator dump`, `screencap`); **[não testado]** = implementado, sem verificação no aparelho;
+**[só o usuário]** = depende de olhar a projeção ou de usar o controle físico.
 
 | Função | Estado | Mecanismo |
 |---|---|---|
 | Gravar props `persist.*` como app comum | **[testado]** | `Runtime/ProcessBuilder` → `/system/bin/setprop` (SELinux permissive) |
 | Keystone 4 cantos (passos 1/5/20 px, OK troca o canto, 0/Del restaura) | **[testado]** | `persist.sys.keystone.{lt,lb,rt,rb}` + `*.init.xy` + `update=1` |
-| Trapézio V/H | **[testado]** | move 2 cantos; contador em `persist.txcz.trapezoid.offsetx/offsety` |
+| Trapézio V/H com a mesma regra do TXCZ | matemática **[testado]** nos testes unitários; no aparelho **[não testado]** desde a mudança | contador em `persist.txcz.trapezoid.offsetx/offsety` (ver "Modelo do keystone") |
 | Zoom 20–100 % | **[testado]** (95 → 100) | base recalculada, ajustes preservados |
-| Restaurar keystone (tecla 0/Del na tela cheia ou item do menu) | **[testado]** | |
-| Modo de instalação (4 modos) e proporção 16:9/4:3 | **[não testado no aparelho]** (matemática coberta por testes unitários) | |
+| Restaurar keystone (tecla 0/Del na tela cheia ou item do menu) | **[testado]** | também esquece a contribuição do automático |
+| Modo de instalação (4 modos) e proporção 16:9/4:3 | **[só o usuário]** (matemática coberta por testes) | |
 | Padrão de teste em tela cheia (borda, grade, cantos, círculo) | **[testado]** | `TestPatternView` |
 | SF consome `update=1` e volta para 0 | **[testado]** | relê na próxima composição; com a tela parada fica em 1 até o próximo quadro |
-| Foco +/− com repetição a cada 60 ms enquanto a tecla está pressionada | **[testado]** só os comandos (logs do kernel); movimento visual **[não confirmado]** | sysfs `motor` |
+| Foco +/− com repetição a cada 60 ms enquanto a tecla está pressionada | comandos **[testado]** (logs do kernel); movimento **[só o usuário]** | sysfs `motor` |
 | Fim de curso (`hd_camera_on == 1` para o motor) | **[não testado]** (o nó lê 0) | |
-| Abrir HDMI | **[não testado]** (o intent é o do MAP) | `com.android.rockchip.camera2/.RockchipCamera2` |
+| Abrir HDMI | **[não testado]** | `com.android.rockchip.camera2/.RockchipCamera2` |
 | Fonte ao ligar (Home / HDMI / app da lista) | UI e leitura **[testadas]**; gravação usa o mesmo `setprop` | `persist.txcz.source` + `persist.txcz.boot.app` |
-| Brilho/contraste/saturação/matiz | grava as props **[testado]**; efeito visual **[não confirmado]** | ver "Imagem" |
-| Keystone automático (liga/desliga, calibrar, inverter) | **[não testado no aparelho]** (ver aviso abaixo); fórmula coberta por teste | serviço próprio com o acelerômetro |
-| Tecla F12 do controle abre este app | **[testado]** com evento real de evdev (`sendevent`) | serviço de acessibilidade |
+| Brilho/contraste/saturação/matiz | HWC aplica no conector **[testado]** (log); efeito visual **[só o usuário]** | ver "Imagem" |
+| Keystone automático | **desligado por padrão** e não sobe no boot **[testado]**; calibrar/ativar **[só o usuário]** | estado próprio em SharedPreferences (`AutoKeystoneState`) |
+| Tecla F12 do controle abre este app | **[testado]** com `sendevent`, inclusive depois de reiniciar | serviço de acessibilidade `directBootAware` |
+| "Configurações do Android" (Projectivy, `android.settings.SETTINGS`) abrem o TvSettings | **[testado]** | `AndroidSettingsActivity` + TxczSetting desativado (ver "Integração") |
+| TvSettings com o menu completo (sabor TwoPanel) | **[testado]** (abre sem fechar; itens conferidos com `uiautomator dump`) | overlay estático `tvsettings-overlay` |
+| Item "Projetor" no menu principal do TvSettings | **[testado]** depois do reboot | app de sistema + ação `com.android.tv.set.SOUND` |
+| LEDs indicadores (verde, vermelho) | permissão 0666 no boot **[testado]**; liga/desliga pelo app **[só o usuário]** | `system/hy300-settings.rc` + `Leds` |
 | Ícone/banner leanback (aparece no Projectivy) | **[testado]** | `android:banner`, `LEANBACK_LAUNCHER` |
-| Item "Projetor" no menu principal do TvSettings | preparado; **requer instalação como app de sistema + reboot** | ver "Integração" |
-| A2DP sink | switch de `persist.bluetooth.rka2dpsink` **[não testado]** | precisa reiniciar o BT/aparelho |
+| A2DP sink | **[não testado]** | `persist.bluetooth.rka2dpsink`, vale depois de reiniciar |
 
-Testes unitários (JVM): `./gradlew testDebugUnitTest` (7 testes de `Keystone` e da fórmula do automático, todos passando).
+Testes unitários (JVM): `./gradlew testDebugUnitTest` (29 testes: `Keystone`, `AutoKeystoneState`, `AndroidSettingsTarget`, `Leds`, `Diag`).
 
 ### Modelo do keystone
 
@@ -45,9 +49,10 @@ Testes unitários (JVM): `./gradlew testDebugUnitTest` (7 testes de `Keystone` e
   então mudar o zoom, a proporção ou o modo **não perde** os ajustes, e mudanças feitas pelo app TXCZ também são respeitadas.
 - Props TXCZ mantidas coerentes: `persist.txcz.install.model`, `trapezoid.zoom`, `trapezoid.offsetx/offsety`, `screen.width/height/ratio`.
 - Limites: até 1/3 da área para dentro; para fora, só até a borda do painel.
-- Trapézio: positivo em V estreita o topo (negativo, a base); positivo em H estreita a esquerda. Cada unidade move os dois cantos 1 px em x e 9/16 px em y (H: 16/9 px em x e 1 px em y).
-  **Diferença do TXCZ:** a semântica de `offsetx/offsety` do TXCZ não ficou clara no código decompilado. Se o TXCZ deixar
-  um contador ≠ 0 com outro significado, o primeiro passo do trapézio aqui pode deslocar os cantos de forma inesperada. Use "Restaurar".
+- Trapézio, mesma regra do `ProjectorVerticalActivity` do TXCZ (conferida no bytecode, a decompilação do jadx sai errada para ↓ ← →):
+  `offsetx` é o **vertical** (↑ soma, ↓ subtrai; positivo estreita o topo, negativo a base) e `offsety` é o **horizontal**
+  (→ soma, ← subtrai; positivo estreita a borda direita, negativo a esquerda). Cada unidade move os dois cantos da borda 1 px em x **e** 1 px em y.
+  Limite: ±1/3 da largura (V) ou da altura (H) com zoom. Como a regra é a mesma, um contador deixado pelo TXCZ é desfeito corretamente.
 
 ### Foco: o que o kernel aceita de fato
 
@@ -60,38 +65,52 @@ O `motor_store` (kernel em `boot.img`, desmontado em `0x7359b0`) compara o buffe
 ### Imagem
 
 - Escala **0–100, padrão 50**: é o que o TvSettings RK usa (`display/AdvancedDisplaySettingsActivity`, via `RkDisplayOutputManager.setBrightness(display, v)`).
-- `android.os.RkDisplayOutputManager` está **bloqueada pela política de API oculta** para este app (log: `Accessing hidden method ... blocked`). O app tenta essa classe primeiro e, se falhar, grava
-  `persist.vendor.<item>.main` e incrementa `vendor.display.timeline`. Esse é o gatilho que o HWC observa (`HwcDisplay::UpdateBCSH` faz `property_get_int32("vendor.display.timeline")` e só reaplica quando o valor muda).
-- Efeito visual no painel LVDS **não confirmado**. O HWC pode cair no caminho de "baseparameter" se o conector LVDS não tiver propriedades BCSH.
-- **Perfil PQ** (`persist.vendor.rkpq.config.path`): testado. O `libpq` não relê em runtime (nenhum log, sem efeito), e o `init` força `pq_ui.json` em todo boot.
-  Removido da UI. Observação: o HWC roda o PQ (RKSWPQ/OpenCL) em **todo quadro**, então o PQ afeta também a UI, não só o HDMI.
+- O app grava `persist.vendor.<item>.main` e incrementa `vendor.display.timeline`. É o mesmo caminho do `RkDisplayOutputManager`.
+  Com `vendor.hwc.log=511`, o HWC registra `hwc-drm-connector: UpdateBCSH ... LVDS-0 BCSH=[b,c,s,h]` a cada mudança do timeline, e **não**
+  registra "can't find suitable BCSH Property": o conector LVDS tem as propriedades BCSH e o HWC as envia ao kernel. O efeito visual depende do VOP2 e só dá para ver na projeção.
+  `screencap` não serve (captura antes do HWC). Não há `/dev/mem` (`CONFIG_DEVMEM` desligado) para ler os registradores do VOP2.
+- `android.os.RkDisplayOutputManager` fica bloqueada pela política de API oculta. Com `settings put global hidden_api_policy 1` ela carrega (testado, depois revertido),
+  mas não traz nada além do caminho por props, então a política global não é mexida.
+- O HWC também relê o `baseparameter` nesse momento ("UpdateConnectorBaseInfo ... Update success"). A partição ficou idêntica ao backup (SHA-256 conferido).
+- **Perfil PQ** (`persist.vendor.rkpq.config.path`): o `libpq` não relê em runtime, e o `init` força `pq_ui.json` em todo boot. Removido da UI.
+  O HWC roda o PQ (RKSWPQ/OpenCL) em **todo quadro**, então o PQ afeta também a UI, não só o HDMI.
 
-### Keystone automático: aviso
+### Keystone automático
 
-O serviço `AutoKeystoneService` (foreground) reimplementa o `TaitouService`: média de 2 amostras, estabilidade de 3 leituras, `a = pitch − tt.angle`,
-`v=⌊|a|·4,2⌋` e `vH=⌊720·v·2/1280⌋` (ou `⌊|90−a|·3,9⌋` projetando no teto). Ele recalcula quando |Δ| ≥ 2° parado ou ≥ 4° em movimento, calibra quando pedido (`tt.angle`, `tt.bdstate=1`) e grava `tt.preAngle`.
-Diferenças: a correção é **somada** ao ajuste manual (a contribuição anterior fica em SharedPreferences e é retirada antes da nova). Ao desligar, ela é removida. Nos modos de teto o sinal é invertido, e `tt.txfx` funciona como "inverter direção".
+O serviço `AutoKeystoneService` (foreground) reimplementa o `TaitouService`: média de 2 amostras, estabilidade de 3 leituras, `a = pitch − ângulo calibrado`,
+`v=⌊|a|·4,2⌋` e `vH=⌊720·v·2/1280⌋` (ou `⌊|90−a|·3,9⌋` projetando no teto). Recalcula quando |Δ| ≥ 2° parado ou ≥ 4° em movimento.
+Diferenças: a correção é **somada** ao ajuste manual (a contribuição anterior é retirada antes da nova). Ao desligar, ela é removida. Nos modos de teto o sinal é invertido.
 
-**Não foi ligado no aparelho:** a calibração atual (`tt.angle=27,99`) está muito longe da inclinação lida agora (≈72,8°). Ligar sem recalibrar aplicaria uma correção enorme.
-Para testar: projetor na posição instalada → "Calibrar agora" → "Ativar". Se o app TXCZ continuar instalado com `tt.enable=1`, o `TaitouService` dele também liga no boot e os dois brigam.
-Nesse caso, desative o dele: `adb shell pm disable com.android.tv.settings/com.shzhtxcz.txbox.service.TaitouService`.
+**Estado próprio, desligado por padrão.** Liga/desliga, calibração, "inverter" e a contribuição atual ficam juntos no SharedPreferences `autoks` (`AutoKeystoneState`).
+Antes o app usava `persist.txcz.tt.enable`, que a TXCZ tinha deixado em 1: o serviço subia em todo boot. Por que SharedPreferences e não uma prop `persist.hy300.*`:
+o "ligado" e a contribuição gravada nos cantos têm de sumir juntos. Se os dados do app forem apagados, tudo volta desligado e sem calibração. Com uma prop, o "ligado"
+sobreviveria e a próxima correção seria somada sobre a antiga, que já está nos cantos. O app não lê nem grava mais `persist.txcz.tt.*`.
+Só corrige com o automático ligado **e** calibrado. "Calibrar agora" com ele desligado só calibra e para. A calibração automática silenciosa do TXCZ (ao achar o aparelho nivelado) foi retirada.
+
+**Não foi ligado no aparelho**: a calibração exige o projetor na posição física e alguém olhando a projeção. O `TaitouService` da TXCZ também fica parado
+(pacote desativado e `persist.txcz.tt.enable=0`).
 
 ## Compilar e instalar
 
 ```sh
 cd android/hy300-settings
-export JAVA_HOME=~/.jdks/jbr-17.0.8          # JBR 17 (o java 25 do sistema não serve para o AGP)
-echo "sdk.dir=$HOME/Android/Sdk" > local.properties
-./gradlew assembleRelease                     # R8 ligado, assinado com a chave debug (~2 MB)
-./gradlew testDebugUnitTest
-adb install -r app/build/outputs/apk/release/app-release.apk
+echo "sdk.dir=$HOME/Android/Sdk" > local.properties   # commandline-tools com platform 35 e build-tools 35.0.0
+./gradlew assembleRelease testDebugUnitTest            # JDK 17 (o java do sistema); R8 ligado, assinado com a chave debug
 ```
-Toolchain: Gradle 8.14.3 (wrapper), AGP 8.11.0, compileSdk 35, minSdk 30, targetSdk 32.
-`assembleDebug` também funciona (~11 MB, sem R8). Release e debug usam a mesma chave, então dá para trocar um pelo outro com `install -r`.
+Toolchain: Gradle 8.14.3 (wrapper), AGP 8.11.0, compileSdk 35, minSdk 30, targetSdk 32. Saídas: `app/build/outputs/apk/release/app-release.apk`
+e `tvsettings-overlay/build/outputs/apk/release/tvsettings-overlay-release.apk`.
 
-Para o atalho F12 (uma vez): `adb shell pm grant io.github.hy300.settings android.permission.WRITE_SECURE_SETTINGS`
-e ligar em **Outros → Tecla de configurações (F12)** (ou `settings put secure enabled_accessibility_services io.github.hy300.settings/io.github.hy300.settings.F12KeyService`).
-Como priv-app a permissão é concedida automaticamente.
+Instalação completa (com `ANDROID_SERIAL=<ip:porta>` se houver mais de um aparelho):
+```sh
+system/install-system.sh            # priv-app + privapp-permissions + .rc dos LEDs no overlay do /system, e o mesmo APK em /data
+system/install-tvsettings-overlay.sh  # overlay estático do TvSettings em /product/overlay
+system/disable-txcz-settings.sh     # desativa o TxczSetting, liga o atalho F12 (não precisa reiniciar)
+adb reboot
+```
+Reverter: `system/enable-txcz-settings.sh`, `system/uninstall-tvsettings-overlay.sh`, `system/uninstall-system.sh` e reiniciar.
+
+A chave debug é a de `~/.android/debug.keystore` de quem compila. Um APK assinado com outra chave não atualiza o instalado
+(`INSTALL_FAILED_UPDATE_INCOMPATIBLE`): rode `adb uninstall io.github.hy300.settings` antes. Os dados do app (atalho, automático, LEDs) se perdem; o keystone fica nas props.
 
 ## Modelo de permissões (decisão)
 
@@ -107,62 +126,102 @@ Por quê: dispensa assinatura de plataforma (não temos a release-key) e `shared
 
 Nada disso foi necessário agora.
 
-Os LEDs/ventoinha (`/sys/class/leds/{Fan_h,green,red}`) são `0644 root/system` → um app comum não grava. Ficou em TODO (o `Lcd_power` é 0777, mas é a fonte de luz: não mexer).
+LEDs: os nós `green`/`red` do `gpio-leds` são `0644 system`. O `system/hy300-settings.rc` (em `/system/etc/init` pelo overlay) dá `0666` no `on boot`,
+e o `BootReceiver` reaplica os LEDs que o usuário desligou (o device tree liga todos ao iniciar). **Ventoinha (`Fan_h`) e fonte de luz (`Lcd_power`) ficam de fora de
+propósito**: a TXCZ só desligava a ventoinha no modo caixa de som (`SoundBoxService`), com a luz apagada. Desligar a ventoinha com a luz acesa aquece o projetor.
 
 ## Integração com as Configurações do Android
 
-O TvSettings do aparelho é o `com.android.tv.set` (flavor "Classic", `res/xml/main_prefs.xml`). Não há mecanismo genérico de tiles injetados no menu principal do TvSettings 12.
-Há, porém, o item oculto **`sound`**, com `intent action=com.android.tv.set.SOUND`:
-`MainFragment.updateSoundSettings()` o torna visível se um **app de sistema** (`FLAG_SYSTEM`) tratar essa ação. Título, resumo e ícone vêm dos
-recursos `sound_pref_title`, `sound_pref_summary` e `sound_icon` do pacote que trata a ação. Este app declara a ação na `MainActivity` e fornece os três recursos
-("Projetor" / "Keystone, foco, fonte e imagem"), protegidos do `shrinkResources` por `res/raw/keep.xml`.
-Efeito colateral: com isso, o `DevicePrefFragment` esconde o item "Sons do sistema" (em Preferências do dispositivo).
+**Problema:** "abrir Configurações do Android trazia a tela antiga de volta". `android.settings.SETTINGS` só era tratada pelo
+`com.android.tv.settings/com.shzhtxcz.txbox.MainActivity` (o TxczSetting da TXCZ, em `/system/app/TxczSetting`). As Configurações reais são o TvSettings
+AOSP/Rockchip `com.android.tv.set/.MainSettings` (`/system_ext/priv-app/TvSettings`, pacote renomeado porque a TXCZ ocupou `com.android.tv.settings`;
+o código é o do AOSP, a única mudança da TXCZ achada é o nome do modelo em "Acerca de"). A TXCZ tirou do `MainSettings` o filtro de `android.settings.SETTINGS`.
+O Projectivy usa exatamente essa ação (`SettingsAndroidActivity` e o ícone de engrenagem da barra de status).
 
-Para ativar (**pendente, precisa de reboot**):
-```sh
-./gradlew assembleRelease
-system/install-system.sh     # adb root + remount; copia para /system/priv-app/HY300Settings + privapp-permissions
-adb reboot
-```
-Depois do reboot, a cópia em `/data` (mesma assinatura e versão) vira atualização do app de sistema.
-`ro.control_privapp_permissions` está vazio (não é enforce), então não há risco de bootloop por permissão faltando. Reverter: `system/uninstall-system.sh` + reboot.
+**Correção:**
+- Este app declara `android.settings.SETTINGS` em `AndroidSettingsActivity` (sem interface), que repassa para `com.android.tv.set/.MainSettings`.
+  O destino é escolhido por `AndroidSettingsTarget` entre quem trata `MAIN` + `LEANBACK_SETTINGS`, nunca o pacote da TXCZ nem este app.
+- `system/disable-txcz-settings.sh` desativa o pacote `com.android.tv.settings` inteiro com `pm disable` (nada é apagado; `enable-txcz-settings.sh` reverte).
+  Das ações públicas do TxczSetting, só `android.settings.SETTINGS` (no `MainActivity`, com `MAIN`/`LAUNCHER`/`LEANBACK_LAUNCHER`) era de Configurações; as demais
+  são do protetor de tela, do `BridgeService`, do vendor storage (`VsReceiver`, `MyService`) e do autofoco (app ausente). Nenhuma outra ação `android.settings.*`
+  caía nele (conferido com `cmd package query-activities` para ~40 ações).
+- O que o TxczSetting fazia no boot (`OnLineOrOffLineReceiver`): `SoundBoxService` (só com `persist.txcz.sound.enable=1`), `Sensorservice` (só com o app
+  `com.hysd.txczscreen`, ausente) e `TaitouService` (por `persist.txcz.tt.enable`). Nada disso é necessário para o keystone ou a fonte: o SF lê
+  `persist.sys.keystone.*` e o `services.jar` lê `persist.txcz.source/boot.app` sozinhos. Única perda: o `VsReceiver`, que gravava o vendor storage id 50 (ver TODO 6).
+- O script também grava `persist.txcz.tt.enable=0`, troca o protetor de tela padrão (era o da TXCZ) pelo `com.android.dreams.basic/.Colors` e liga o `F12KeyService`.
+- Tecla F12: o `TxczPwd.setExKey` (services.jar) continua chamando o `MainActivity` da TXCZ, agora desativado. Testado com `input keyevent 142`
+  (eventos injetados não passam pela acessibilidade): o `startActivity` falha e o `system_server` segue vivo (o JNI do input limpa a exceção).
+  Com o controle, o `F12KeyService` consome a tecla antes e abre este app.
+
+**Item "Projetor" no menu principal.** Não há tiles injetados no menu principal do TvSettings 12, mas há o item oculto **`sound`**
+(`intent action=com.android.tv.set.SOUND`): `MainFragment.updateSoundSettings()` o mostra se um **app de sistema** tratar a ação, com título, resumo e ícone
+dos recursos `sound_pref_title`, `sound_pref_summary` e `sound_icon` desse pacote (protegidos do `shrinkResources` por `res/raw/keep.xml`).
+Por isso o app é instalado como priv-app (`install-system.sh`). Depois do reboot, a cópia em `/data` (mesma assinatura e versão) vira atualização do app de sistema.
+`ro.control_privapp_permissions` está vazio (não é enforce).
+
+**Menu completo do TvSettings.** O TvSettings escolhe o menu por `config_tvSettingsFlavor`. O build da TXCZ usa "Classic", cujo `device.xml` foi enxugado:
+"Preferências do dispositivo" tinha só Ecrã, Acerca de, Bluetooth, Data e hora, Idioma e Teclado. O módulo `tvsettings-overlay` (RRO só com recursos, estático em
+`/product/overlay`; o TvSettings não declara `<overlayable>`, então um overlay pré-instalado pode trocar o recurso) muda para **"TwoPanel"**, o sabor do AOSP 12
+(o do LineageOS). Resultado, com `uiautomator dump`:
+
+| Tela | Antes (Classic) | Depois (TwoPanel) |
+|---|---|---|
+| Menu principal | Rede e Internet, Contas e início de sessão, Apps, Preferências do dispositivo, Controlos remotos e acessórios | Rede e Internet, Contas e início de sessão, **Projetor**, **Privacidade**, **Ecrã e som**, Apps, Preferências do dispositivo, Controlos remotos e acessórios |
+| Preferências do dispositivo | Ecrã, Acerca de, Bluetooth, Data e hora, Idioma, Teclado | Acerca de, Data e hora, Idioma, Teclado, **Armazenamento**, **Proteção de ecrã**, **Poupança de energia**, **Acessibilidade**, **Reiniciar** (Opções de programador aparece quando ativado) |
+
+O "Ecrã" da Rockchip some de Preferências, mas "Ecrã e som" (menu principal) tem Ecrã, Escala do texto e as definições de visualização avançadas.
+Bluetooth fica em "Controlos remotos e acessórios". Os sabores **"X" e "Vendor" não servem**: o `NetworkFragment` da Rockchip remove a categoria `vpn`, que não existe no
+`network_x.xml`, e o TvSettings fecha na hora (`NullPointerException` em `removePreference`). Testado e descartado.
+Também foi conferido que as activities escondidas abrem com `am start` (Armazenamento `StorageResetActivity`, Contas `AccountsActivity`, Teclado `KeyboardActivity`,
+Protetor `DaydreamActivity`, Acerca de `AboutActivity`). O idioma do aparelho está em pt-PT ("Definições", "Ecrã"); dá para trocar em Preferências → Idioma.
 
 Também:
 - **Launcher leanback:** banner e ícone. Aparece no Projectivy como "Projetor".
-- **Tecla F12 (142):** o `TxczPwd.setExKey` roda em `PhoneWindowManager.interceptKeyBeforeDispatching`. O filtro de teclas da acessibilidade roda **antes**,
-  então o `F12KeyService` consome o 142 e abre este app, sem mexer no `services.jar`. Observação: `input keyevent 142` **não** passa pelo filtro
-  (eventos injetados não passam), então para testar use o controle ou `sendevent /dev/input/event0 1 188 1; ... 0 0 0; ... 1 188 0; ... 0 0 0`.
-  Alternativa sem acessibilidade (depois de aposentar o TXCZ): apagar o `TxczSetting` do `/system` e instalar um "shim" com pacote
-  `com.android.tv.settings` e uma activity chamada `com.shzhtxcz.txbox.MainActivity` que só redireciona para cá.
+- **Tecla F12 (142):** o filtro de teclas da acessibilidade roda antes do `interceptKeyBeforeDispatching`, então o `F12KeyService` consome o 142 e abre este app,
+  sem mexer no `services.jar`. O serviço é `directBootAware`: sem isso, no boot, o `AccessibilityManagerService` o ignorava antes do desbloqueio e regravava
+  `enabled_accessibility_services` sem ele (o atalho sumia a cada reboot). Para testar sem o controle:
+  `sendevent /dev/input/event0 1 188 1; sendevent /dev/input/event0 0 0 0; sendevent /dev/input/event0 1 188 0; sendevent /dev/input/event0 0 0 0`.
 
 ## Estrutura
 
 ```
 app/src/main/java/io/github/hy300/settings/
   Sys               getprop/setprop/sysfs
-  Keystone          modelo (base + ajuste), props
+  Keystone          modelo (base + ajuste, trapézio do TXCZ), props
   KeystoneApplier   gravação assíncrona com coalescência
   KeystoneActivity  tela cheia: cantos / trapézio / zoom / padrão
   TestPatternView   padrão de teste
   Focus, FocusActivity
-  AutoKeystoneService, AutoKeystoneFragment
+  AutoKeystoneService, AutoKeystoneFragment, AutoKeystoneState, SharedPrefsStore
   Source, SourceFragment, AppPickerFragment
   RkDisplay, ImageFragment
-  OtherFragment (A2DP, F12, abrir TXCZ), DiagFragment, Diag
-  F12KeyService, BootReceiver (religa o automático no boot; ouve também android.intent.action.txcz.BOOT_COMPLETED)
+  Leds, LedBoot, OtherFragment (A2DP, F12, LEDs)
+  Diag, DiagFragment, DiagActivity
+  AndroidSettingsActivity, AndroidSettingsTarget   android.settings.SETTINGS → TvSettings
+  F12KeyService, BootReceiver (LEDs e automático no boot)
   MainActivity, SettingsFragment, RootFragment, ProjectionFragment, BasePrefs, Bg
-system/  install-system.sh, uninstall-system.sh, privapp-permissions-hy300-settings.xml
+tvsettings-overlay/   RRO do TvSettings (sabor TwoPanel)
+system/  install-system.sh, uninstall-system.sh, privapp-permissions-hy300-settings.xml, hy300-settings.rc,
+         install-tvsettings-overlay.sh, uninstall-tvsettings-overlay.sh,
+         disable-txcz-settings.sh, enable-txcz-settings.sh
 ```
 
 ## Pendências / TODO (para o próximo agente)
 
-1. **Reboot para a integração com o TvSettings:** rodar `system/install-system.sh`, reiniciar e conferir o item "Projetor" no menu principal de `com.android.tv.set` e o `DiagFragment` ("Instalado como app de sistema: sim").
-2. **Keystone automático:** calibrar no lugar, ligar e validar a direção (usar "Inverter direção" se estreitar o lado errado). Validar a regra dos modos de teto. Desativar o `TaitouService` do TXCZ.
-3. **Validação visual com o usuário:** foco (sentido de `user_cw` = "+"?, tamanho do passo, fim de curso), BCSH (se tem efeito; senão remover a tela Imagem ou achar outro caminho, por exemplo `settings put global hidden_api_policy 1` para liberar `RkDisplayOutputManager`, ou o binder `drm_device_management`), modo de instalação e 4:3.
-4. **Segurar a tecla no foco:** usa `ACTION_DOWN` repetido/`ACTION_UP`; conferir com o controle IR real (o IR pode mandar repetições sem `UP` intermediário, o que é tratado, mas não foi testado).
-5. **Trapézio × TXCZ:** confirmar a semântica de `persist.txcz.trapezoid.offsetx/offsety` no TXCZ (`ProjectorVerticalActivity`/`Limit.offsetXIsInLimit`, decompilação confusa) e alinhar, ou zerar os contadores ao abrir.
-6. **Vendor storage id 50** (modo de instalação): o TXCZ grava ao trocar o modo; este app não grava (sem JNI). Investigar quem lê (u-boot/logo). Se importar, usar o `VsReceiver` do TXCZ enquanto existir: `am broadcast -a intent.action.txcz.vs --ei wid 50 --es value <modo>`.
-7. **Ventoinha/LEDs:** nós `0644`; precisa de root/init (ex.: `chmod` num `init.rc` do overlay) para o app controlar.
+1. ~~Reboot para a integração com o TvSettings~~ **Feito** (item "Projetor" no menu principal, Diagnóstico "Instalado como app de sistema: Sim").
+2. **Keystone automático:** calibrar no lugar, ligar e validar a direção ("Inverter direção" se estreitar o lado errado) e a regra dos modos de teto. Só com o usuário.
+3. **Validação visual com o usuário:** foco (sentido de `user_cw` = "+"?, tamanho do passo, fim de curso), BCSH (o HWC aplica; falta ver se muda a imagem),
+   modo de instalação e 4:3, trapézio depois da mudança de regra, LEDs.
+4. **Segurar a tecla no foco:** usa `ACTION_DOWN` repetido/`ACTION_UP`; conferir com o controle IR real.
+5. ~~Trapézio × TXCZ~~ **Feito**: mesma regra do TXCZ (ver "Modelo do keystone").
+6. **Vendor storage id 50 (modo de instalação): o leitor é o U-Boot da TXCZ.** No probe do `rockchip_display` ele faz `vendor_storage_read(50, buf, 1)` e,
+   se o byte for `'2'` ou `'3'` (teto), gira o logo de boot 180°; com outro valor, o logo sai normal (o espelho dos modos 1 e 3 não é reproduzido).
+   Kernel, serviços nativos, SF, HWC, init e os apps de `/system` não leem o id 50 (só a lib `libexplay.so` do espelhamento `com.android.toofifi`, em `/odm`,
+   tem alguma referência a vendor storage, com id não conferido). Este app **não grava** o id 50 (sem JNI, e o `VsReceiver` da TXCZ ficou desativado):
+   trocar o modo pelo app não muda a orientação do logo do U-Boot. Hoje ele segue o que a TXCZ gravou por último. Opções: reativar o TxczSetting por um momento e
+   `am broadcast -a intent.action.txcz.vs --ei wid 50 --es value <modo>`; ou um binário nativo que faça o ioctl do `/dev/vendor_storage`.
+7. ~~Ventoinha/LEDs~~ **Feito** para os LEDs. Ventoinha fica fora por segurança térmica (ver "Modelo de permissões").
 8. **PQ:** trocar perfil exige reiniciar o HWC/reboot e contornar o `init` que força `pq_ui.json`. Fora do alcance de um app.
-9. Corrigir `reverse-engineering/libfocus/README.md` e `MAP.md`: comando de parada é `aastop` (não `stop`), escrita sem `\n`, -EINVAL esperado.
-10. Polimento: resumo do Diagnóstico é truncado pelo layout leanback (máx. linhas); ícones nos itens do menu; textos de ajuda das telas cheias.
+9. ~~Corrigir `libfocus/README.md` e `MAP.md`~~ **Feito**.
+10. ~~Polimento~~ **Feito**: Diagnóstico em linhas, ícones e resumos no menu, textos de ajuda e de tela revistos. Pendente só o que depende de ver na projeção.
+11. O atalho "Restaurar padrão de fábrica" da TXCZ gravava `"0"` no id 50. Se algum dia o app gravar o id 50, repetir isso no "Restaurar".

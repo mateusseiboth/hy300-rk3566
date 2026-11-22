@@ -36,9 +36,14 @@ Documento para outro agente/pessoa continuar de onde paramos. Leia também `READ
   A Play Store de celular para de funcionar com isso, então o Aurora é usado no lugar.
 - Splash do U-Boot com a capivara gravado na partição `boot` (`docs/splash.md`).
 - Animação de boot com logcat ao vivo (`android/bootlog`) instalada e funcionando.
-- Keystone **aprovado pelo usuário**: modo teto frontal (`persist.txcz.install.model=2`),
-  `persist.txcz.trapezoid.zoom=100`, cantos
-  `lt=1280,-720 lb=1280,720 rt=-1280,-720 rb=-1280,720` (iguais aos `*.init.xy`).
+- Keystone **aprovado pelo usuário** (ajustado por ele no app novo; conferido em 22/11 depois de cada reboot):
+  modo teto frontal (`persist.txcz.install.model=2`), `persist.txcz.trapezoid.zoom=100`, cantos
+  `persist.sys.keystone.lt=1135,-720 lb=1280,720 rt=-1170,-720 rb=-1280,720`
+  (`*.init.xy`: `lt 1280,-720 lb 1280,720 rt -1280,-720 rb -1280,720`). Antes de qualquer teste que mexa em keystone,
+  salvar `getprop | grep -E 'keystone|txcz'` e restaurar exatamente estes valores (com `persist.sys.keystone.update=1`).
+- App de configurações novo (`io.github.hy300.settings`) instalado como **priv-app** (overlay do /system) com atualização em /data;
+  `TxczSetting` (`com.android.tv.settings`) **desativado** com `pm disable`; overlay do TvSettings (sabor TwoPanel) em `/product/overlay`;
+  `persist.txcz.tt.enable=0`; atalho F12 ligado. Como reverter: `android/hy300-settings/README.md`, seção "Compilar e instalar".
 - Painel físico é 1024×600, mas o HWC ignora `persist.vendor.framebuffer.main`. O teste de
   renderizar em 1024×600 foi revertido (`docs/debloat.md`).
 
@@ -46,11 +51,21 @@ Documento para outro agente/pessoa continuar de onde paramos. Leia também `READ
 
 ### 1. App de configurações novo — `android/hy300-settings/`
 
-Um worker estava construindo o app (Gradle, leanback-preference, setprop via `Runtime.exec`
-por causa do SELinux permissive). O usuário já viu telas funcionando. **O código ainda não foi
-commitado.** Revisar, conferir o `.gitignore` (sem `build/` nem APK) e commitar. O README do app
-(escrito pelo worker) lista o que funciona e os TODOs. A especificação está em
-`reverse-engineering/MAP.md`.
+Commitado (o README do app tem a tabela de estado com [testado]/[não testado] e os TODOs). Estado em 22/11:
+
+- **"Configurações do Android" traziam a tela da TXCZ de volta.** Causa: `android.settings.SETTINGS` só era tratada por
+  `com.android.tv.settings/com.shzhtxcz.txbox.MainActivity` (TxczSetting); o TvSettings real `com.android.tv.set/.MainSettings` não declara a ação.
+  O Projectivy usa essa ação. Correção: o app trata a ação e repassa para o `MainSettings`, e o TxczSetting foi desativado
+  (`system/disable-txcz-settings.sh`, reversível). Nada que ele fazia no boot é necessário para keystone ou fonte.
+- **TvSettings "pobre"**: o build usa o sabor "Classic", enxugado pela TXCZ. Um overlay estático (`tvsettings-overlay`) troca para "TwoPanel"
+  (AOSP 12/LineageOS): voltaram Privacidade, Ecrã e som, Armazenamento, Proteção de ecrã, Poupança de energia, Acessibilidade e Reiniciar.
+  O sabor "X" fecha o TvSettings (bug da Rockchip no `NetworkFragment`).
+- Item "Projetor" no menu principal do TvSettings: funcionando (app de sistema + ação `com.android.tv.set.SOUND`).
+- Keystone automático com estado próprio (SharedPreferences), desligado; o serviço subia no boot por causa de `persist.txcz.tt.enable=1`.
+- Vendor storage id 50: o leitor é o U-Boot (gira o logo de boot 180° nos modos de teto). O app não grava o id 50 (TODO 6 do README).
+- Falta o usuário validar na projeção: foco, BCSH, modos de instalação, 4:3, trapézio, LEDs, segurar a tecla no foco e o automático.
+- Build: JDK 17 do sistema + Android SDK em `~/Android/Sdk` (commandline-tools, platform 35, build-tools 35.0.0).
+  A chave debug mudou em relação ao primeiro APK (o primeiro foi desinstalado e reinstalado).
 
 ### 2. Kernel — `git@github.com:mateusseiboth/kernel-hy300-rk3566.git`
 
