@@ -150,6 +150,8 @@ A recovery também tem uma `recovery_dtbo` de 623 bytes, que o U-Boot aplica no 
 | 3 | + ventoinha e watchdog no `setup_arch` | ventoinha não ligou: o kernel nem começou. Problema no U-Boot |
 | 4 | resource de fábrica, DT do 6.1 só na seção dtb | ventoinha ligou; o 6.1 subiu com o DT de fábrica até o `/init` (eMMC falha com aquele DT) e travou; o watchdog **desligou** o aparelho (voltou pelo botão, com o log no pstore) |
 | 5 | resource de fábrica + DT embutido | **passou**: relatório completo, reboot quente aos 20 s, Android e Wi-Fi de volta |
+| 6 | + fbcon (`console=tty0`), `reboot -f` com `initcall_debug` | o `reboot -f` funciona (todos os shutdowns e `reboot: Restarting system`); DRM liga o LVDS em 1024x600, mas a projeção fica preta com a luz acesa |
+| 7 | + configuração SPI do painel | **tela funcionando**: o log do kernel aparece na projeção, legível |
 
 Relatório do boot 5 (log em `~/hy300-work/marco1/resultado5/`, fora do repo; tem o serial na
 cmdline):
@@ -166,9 +168,19 @@ Lições:
   liga, então "ventoinha parada" = o kernel não começou.
 - **O reset do watchdog desliga o aparelho** em vez de reiniciar (volta pelo botão de energia).
   A RAM sobrevive: o pstore estava lá.
-- **O `reboot -f` do 6.1 trava** depois do shutdown dos drivers (o `gpio-leds` apaga a
-  ventoinha). O `/init` usa o sysrq `b`, que pula o shutdown; o `Fan_h` tem
-  `retain-state-shutdown`. Investigar o shutdown antes do Android.
+- **O `reboot -f` funciona.** A suspeita de que ele travava veio do boot 1, em que o kernel
+  nem chegou a rodar (era o U-Boot). O `/init` usa o sysrq `b` por padrão e o
+  `hy300.shutdown_debug=1` (variável `EXTRA_CMDLINE` do build) usa o `reboot -f` com o
+  `initcall_debug`, que registra o shutdown de cada dispositivo.
+- **Painel LCD:** o controlador do painel precisa de uma configuração por SPI de 3 fios em
+  bit-bang (GPIO1_D5 dados, GPIO1_D6 clock, GPIO1_D7 CS, GPIO2_A0 strobe) que o kernel de
+  fábrica manda no `panel_simple_probe` (modificação da TXCZ, string `hason in
+  panel_simple_probe spi write`). Sem ela o LVDS funciona e a projeção fica preta. A tabela
+  (26 quadros) foi tirada da Image de fábrica com `tools/txcz_panel_seq.py` e vai no DT em
+  `hy300,spi-init-sequence`; o `panel-simple` do 6.1 a envia no `prepare`, depois do reset.
+  O teste `tests/test_panel_init_seq.py` confere o DTS contra a Image de fábrica.
+- **Log na tela:** `CONFIG_FRAMEBUFFER_CONSOLE` e `console=tty0` (padrão do `EXTRA_CMDLINE`). A
+  imagem sai sem a correção de keystone, que é feita pelo Android.
 - **Wi-Fi:** depois do reboot pelo sysrq `b` o AIC8800 voltou sozinho. Nos reboots normais do
   Android de fábrica ele costuma não voltar (é preciso desligar e ligar o Wi-Fi).
 
