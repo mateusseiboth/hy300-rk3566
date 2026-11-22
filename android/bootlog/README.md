@@ -50,3 +50,25 @@ adb shell 'CLASSPATH=/data/local/tmp/bootlog.dex app_process /system/bin com.hy3
 ```
 
 Depuração: o script escreve em `/dev/kmsg` → `adb shell dmesg | grep bootlog`.
+
+## TODO: versão nativa (C++)
+
+Objetivo: log desde ~6 s (quando o SurfaceFlinger sobe) e boot ~10–15 s mais rápido, sem a VM
+Java disputando CPU com o zygote.
+
+Avaliação (nov/2026):
+
+- Precisa da API **C++ privada** do `libgui` (`SurfaceComposerClient`, `Transaction`, `Surface`).
+  O `libgui.so` do aparelho exporta os símbolos (ex.:
+  `_ZN7android21SurfaceComposerClient13createSurfaceERKNS_7String8EjjijRKNS_2spINS_7IBinderEEENS_13LayerMetadataEPj`).
+- **ABI:** a plataforma usa a libc++ `std::__1`; o NDK usa `std::__ndk1` → compilar com clang do
+  NDK mas com `-nostdinc++` + headers da libc++ e de `frameworks/native`, `system/core`
+  (libutils/libcutils/liblog), `system/libbase`, `hardware/libhardware` da tag AOSP
+  `android-12.1.0_rX` correspondente a `SQ3A.220705.003`, linkando contra as `.so` puxadas do
+  aparelho (`libgui`, `libui`, `libutils`, `libbinder`, `libc++`, `liblog`, `libcutils`, `libbase`).
+- Texto: sem `Canvas` → fonte bitmap embutida (ou FreeType) desenhando direto no buffer
+  (`Surface::lock`/`unlockAndPost`).
+- Risco: ABI do `libgui` alterado pela TXCZ/Rockchip → crash. Manter a versão Java como fallback
+  no `bootlog.sh`.
+- Rust não simplifica: o obstáculo é a API C++ privada, não a linguagem.
+- Estimativa: 2–3 h de tentativa e erro.
