@@ -12,7 +12,7 @@ Objetivos:
 - [x] Launcher alternativo (Projectivy via Aurora)
 - [x] Declarar `android.software.leanback` (apps de TV) — ver `docs/launcher-leanback.md`
 - [x] Splash do U-Boot customizável (`docs/splash.md`)
-- [ ] Animação de boot com log ao vivo (`android/bootlog`)
+- [x] Animação de boot com log ao vivo (`android/bootlog`)
 - [ ] Engenharia reversa do app de configurações da TXCZ (keystone, espelhamento, foco, fontes)
 - [ ] App de configuração próprio integrado às Configurações do Android
 - [ ] Áudio da entrada HDMI (RK628)

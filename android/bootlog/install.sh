@@ -13,5 +13,9 @@ adb shell chmod 755 /system/media/bootlog/bootlog.sh
 # guarda o rc original uma vez
 adb shell '[ -f /system/etc/init/bootanim.rc.orig ] || cp /system/etc/init/bootanim.rc /system/etc/init/bootanim.rc.orig'
 adb push files/bootanim.rc /system/etc/init/bootanim.rc
+# animação nativa vira 1 quadro (capivara) enquanto o ART não está pronto
+adb shell '[ -f /system/media/bootanimation.zip.orig ] || cp /system/media/bootanimation.zip /system/media/bootanimation.zip.orig'
+adb push files/bootanimation.zip /system/media/bootanimation.zip
+adb shell chmod 644 /system/media/bootanimation.zip
 adb shell chmod 644 /system/etc/init/bootanim.rc
 echo "ok — reinicie para ver (adb reboot)"

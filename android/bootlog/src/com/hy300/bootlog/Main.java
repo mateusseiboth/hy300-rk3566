@@ -31,7 +31,9 @@ public final class Main {
     static final ArrayDeque<String> lines = new ArrayDeque<>();
     static volatile int progress = 0;          // 0..100
     static volatile String stage = "kernel";
-    static final long T0 = System.currentTimeMillis();
+    static volatile boolean screenEnabled = false;   // viu boot_progress_enable_screen
+    // relógio monotônico desde o boot (o relógio de parede salta quando a hora é acertada)
+    static final long T0 = android.os.SystemClock.uptimeMillis();
 
     static final String[][] STAGES = {
         {"boot_progress_start", "8", "zygote"},
@@ -88,12 +90,23 @@ public final class Main {
         int top = 48, bottom = H - 40;
         int visible = (int) ((bottom - top) / lh);
         int shownProgress = 0;
+        boolean readySignaled = false;
         Method getProp = Class.forName("android.os.SystemProperties").getMethod("get", String.class, String.class);
         long deadline = T0 + (test ? 15_000 : 180_000);
+        // Nesta ROM service.bootanim.exit já pode estar em "1" quando o serviço inicia.
+        // Só respeita a prop se ela mudar de 0 -> 1 durante a execução.
+        boolean sawZero = !"1".equals(getProp.invoke(null, "service.bootanim.exit", "0"));
+        System.out.println("bootlog: exit prop inicial=" + (sawZero ? "0" : "1"));
 
         while (true) {
             String exit = (String) getProp.invoke(null, "service.bootanim.exit", "0");
-            if ((!test && "1".equals(exit)) || System.currentTimeMillis() > deadline) break;
+            if (!"1".equals(exit)) sawZero = true;
+            boolean propExit = sawZero && "1".equals(exit);
+            if (!test && (screenEnabled || propExit)) {
+                System.out.println("bootlog: fim (screenEnabled=" + screenEnabled + ", propExit=" + propExit + ")");
+                break;
+            }
+            if (android.os.SystemClock.uptimeMillis() > deadline) { System.out.println("bootlog: timeout"); break; }
 
             Canvas c = surface.lockCanvas(null);
             try {
@@ -103,7 +116,7 @@ public final class Main {
                 hdr.setColor(Color.rgb(190, 140, 255));
                 c.drawText("HY300 :: RK3566 :: booting", 16, 30, hdr);
                 hdr.setColor(Color.rgb(120, 110, 150));
-                String t = String.format("%6.2fs  %s", (System.currentTimeMillis() - T0) / 1000f, stage);
+                String t = String.format("%6.2fs  %s", android.os.SystemClock.uptimeMillis() / 1000f, stage);
                 c.drawText(t, W - 16 - hdr.measureText(t) - (logo != null ? 0 : 0), 30, hdr);
                 bar.setColor(Color.rgb(60, 40, 110));
                 c.drawRect(0, 40, W, 41, bar);
@@ -136,6 +149,10 @@ public final class Main {
                 c.drawRoundRect(new RectF(16, H - 26, 16 + (W - 32) * shownProgress / 100f, H - 16), 5, 5, bar);
             } finally {
                 surface.unlockCanvasAndPost(c);
+            }
+            if (!readySignaled) {   // avisa o script para encerrar a animação original
+                readySignaled = true;
+                try { new java.io.FileOutputStream("/dev/.bootlog_ready").close(); } catch (Throwable ignored) {}
             }
             Thread.sleep(40);
         }
@@ -187,6 +204,7 @@ public final class Main {
                 for (String[] s : STAGES) {
                     if (l.contains(s[0])) { progress = Integer.parseInt(s[1]); stage = s[2]; }
                 }
+                if (l.contains("boot_progress_enable_screen")) screenEnabled = true;
                 if (progress == 0 && l.contains("SurfaceFlinger")) { progress = 4; stage = "surfaceflinger"; }
                 synchronized (lines) {
                     lines.addLast(l.replace('\t', ' '));
