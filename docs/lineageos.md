@@ -1,0 +1,354 @@
+# LineageOS 24.0 (Android 17) no HY300: inventário, decisões e plano
+
+Estado em 22/11/2026: levantamento feito e esqueleto da árvore de dispositivo criado em
+`~/android/device-hy300` (git local, branch `lineage-24.0`, vira `device/hy300/rk3566`).
+Nada foi compilado. O checkout do Lineage (`~/android/lineage`) ainda estava no começo do
+`repo sync`: o que não tinha chegado foi lido dos repositórios públicos (GitHub do LineageOS,
+`android.googlesource.com` na tag `android-17.0.0_r1`) e está marcado assim.
+
+## Resumo das decisões
+
+| Tema | Decisão | Por quê |
+|---|---|---|
+| Produto | **LineageOS para TV** (`atv_base.mk` + `common_full_tv.mk`) | existe no lineage-24.0 (ver "Produto") e traz as Configurações do Android TV |
+| ABI | só 64 bits (`core_64_bit_only.mk`) | um zygote só; o kernel já é arm64. Apps só armeabi-v7a deixam de rodar |
+| RAM | `atv_lowram_defaults.mk` (low_ram, perfis de boot de TV, speed-profile) + zram 75 % | 1,5 GB; a fábrica já era Android Go (`ro.config.low_ram=true`, `gmsversion 12_202201.go`) |
+| Kernel | 6.1, com **FCM nível 8** no manifesto | no Android 17 o 6.1 só é aceito pela matriz de nível 8 |
+| Base do kernel | **recomendo levar os patches do HY300 para o kernel Rockchip Android (ACK) 6.1.172** publicado pelo Lineage-Rockchip | o nosso `develop-6.1` é o BSP Linux, sem ashmem, dm-default-key, cpufreq_times, uid_sys_stats e xt_quota2 |
+| Boot | boot.img **header v2**, sem `vendor_boot`, resource.img de fábrica na seção `second`, kernel comprimido | é o que o U-Boot de fábrica já boota; a `Image` crua não cabe nos 40 MiB da `boot` |
+| Gráficos | **Mesa Panfrost + drm_hwcomposer + minigbm** (sem blobs) | repositório público; os blobs Mali G52 de 64 bits existem, mas não podem ir para o repo |
+| Keystone | reimplementar no **SurfaceFlinger/RenderEngine** com a mesma API de props `persist.sys.keystone.*` | o app de configurações continua igual; Skia aplica a homografia dos 4 cantos |
+| Vídeo | primeiro só codecs de software; depois MPP + Codec2 da Rockchip (código aberto) | MPP e Codec2 têm fonte pública; exigem adaptar ao minigbm |
+| Teste sem tocar na `super` | Lineage no slot `recovery` com a `super` e o `/data` **num pendrive** na porta USB-A | nada no eMMC muda além da `recovery` |
+
+## Produto: Lineage TV existe no 24.0
+
+Evidência no checkout (`~/android/lineage/.repo/manifests`, branch `lineage-24.0`, commit
+`913c6ba` de 14/11/2026):
+
+- `snippets/lineage.xml`: `device/lineage/atv` (LineageOS/android_device_lineage_atv),
+  `packages/apps/Catapult` (launcher de TV do Lineage), `packages/apps/LineageCustomizer`;
+- `default.xml`: `device/google/atv` (LineageOS/android_device_google_atv),
+  `packages/apps/TvSettings` (LineageOS/android_packages_apps_TvSettings),
+  `packages/inputmethods/LeanbackIME`;
+- `device/lineage/atv` já baixado (commit `dbea85e`, 07/11/2026): `lineage_atv.mk` instala o
+  `TvSettingsTwoPanel`, keylayouts de controles e overlays;
+- `vendor/lineage` (GitHub, branch lineage-24.0): `config/common_full_tv.mk` →
+  `common_tv.mk` → `common.mk` + `device/lineage/atv/lineage_atv.mk` + LeanbackIME,
+  Catapult, LineageCustomizer, overlay `vendor/lineage/overlay/tv`;
+- `device/google/atv/products/atv_lowram_defaults.mk`: o perfil de TV com pouca RAM.
+
+Exemplo de aparelho Rockchip de TV no Lineage (lineage-23.2, organização Lineage-Rockchip
+no GitHub): `android_device_h96_v58/lineage_v58.mk` faz exatamente `PRODUCT_IS_ATV := true`,
+`atv_base.mk` e `common_full_tv.mk`. O `lineage_hy300.mk` segue esse modelo. O plano B
+(Lineage comum com launcher de TV) não foi preciso.
+
+As "Configurações do Android" do Lineage TV são o TvSettings TwoPanel, o mesmo sabor que hoje
+é forçado por overlay no Android 12 (`android/hy300-settings/README.md`).
+
+## Inventário: partições
+
+GPT de `~/hy300-backup/gpt_head.bin` (eMMC de 15.269.888 setores, ~7,3 GiB):
+
+| # | Partição | Início (setor) | Tamanho | No Lineage |
+|---|---|---|---|---|
+| 1 | security | 8192 | 4 MiB | intocada |
+| 2 | uboot | 16384 | 4 MiB | intocada (U-Boot 2017.09 #txcz) |
+| 3 | trust | 24576 | 4 MiB | intocada |
+| 4 | misc | 32768 | 4 MiB | BCB da recovery (o Lineage usa `/misc` como a fábrica) |
+| 5 | dtbo | 40960 | 4 MiB | intocada (o U-Boot aplica no DT de fábrica) |
+| 6 | vbmeta | 49152 | 1 MiB | intocada (sem AVB) |
+| 7 | boot | 51200 | 40 MiB | boot.img v2 do Lineage |
+| 8 | recovery | 133120 | 108 MiB | slot de teste; depois a recovery do Lineage |
+| 9 | backup | 354304 | 372 MiB | intocada |
+| 10 | cache | 1116160 | 384 MiB | `/cache` |
+| 11 | metadata | 1902592 | 16 MiB | `/metadata` |
+| 12 | baseparameter | 1935360 | 1 MiB | intocada (parâmetros de display da Rockchip) |
+| 13 | cust | 1937408 | 64 MiB | intocada, não montada |
+| 14 | super | 2068480 | 3112 MiB (3.263.168.512 bytes) | partições dinâmicas |
+| 15 | userdata | 8441856 | 3334 MiB | `/data` |
+
+`super` (lpdump do primeiro 2 MiB de `super.img.gz`, sem descompactar o resto): metadado v10.0,
+2 slots de metadado, **sem A/B** (nomes sem sufixo), grupo `rockchip_dynamic_partitions` com
+3.258.974.208 bytes:
+
+| Partição | Setores | Tamanho |
+|---|---|---|
+| system | 1.515.296 | 740 MiB |
+| system_ext | 150.592 | 74 MiB |
+| vendor | 703.512 | 344 MiB |
+| vendor_dlkm | 41.752 | 20 MiB |
+| odm | 587.848 | 287 MiB |
+| odm_dlkm | 512 | 0,25 MiB |
+| product | 790.320 | 386 MiB |
+
+Ocupado: 1850 MiB; livre no grupo: ~1257 MiB.
+
+fstab de fábrica (`/vendor/etc/fstab.rk30board`, extraído do `vendor.img` com `debugfs`):
+
+- system, vendor, odm, system_ext, vendor_dlkm, odm_dlkm, product: `ext4 ro`, `logical,first_stage_mount`;
+- `/metadata` ext4 `formattable,first_stage_mount`; `/cache` ext4; `/misc` emmc; `/cust` ext4;
+- `/data` **ext4** com `fileencryption=software` (FBE v1), `quota`, `reservedsize=128M`,
+  `checkpoint=block`; **sem** criptografia de metadado (a linha f2fs com `metadata_encryption`
+  está comentada). `ro.crypto.type=file`, `ro.crypto.uses_fs_ioc_add_encryption_key=true`;
+- zram `zramsize=75%,zram_backingdev_size=256M`.
+
+O que se reaproveita sem reparticionar: tudo. `boot`, `recovery`, `cache`, `metadata`,
+`userdata` e a `super` têm o tamanho certo para o Lineage TV. A `super` tem 3,1 GB; um Lineage TV
+de 64 bits cabe com folga (tamanho real só depois do primeiro build). O `/data` precisa ser
+formatado na troca (FBE v1 → v2).
+
+## Inventário: hardware e como a fábrica fala com ele
+
+| Bloco | Fábrica (Android 12, vendor 32 bits) | Evidência | No Lineage |
+|---|---|---|---|
+| Display | painel LVDS 1024x600; a ROM renderiza 1280x720 e o HWC escala. HWC `hwcomposer.rk30board.so` (HIDL composer 2.1), gralloc 4.0 da Rockchip | `vendor/etc/vintf/manifest.xml`, `persist.vendor.framebuffer.main=1280x720@60` | drm_hwcomposer (`android.hardware.composer.hwc3-service.drm`) no `card0-LVDS-1`, **1024x600 nativo**, densidade 170 |
+| Keystone | SurfaceFlinger com patch RK + `/system/lib/librkgfx_dc.so` (fechada, 32 bits), props `persist.sys.keystone.*` | `reverse-engineering/display/README.md` | patch no SurfaceFlinger (ver "Keystone") |
+| GPU | Mali-G52 com `libmali` (blob), `ro.hardware.egl=mali`, módulo `bifrost_kbase` | `vendor/etc/init.insmod.cfg`, props | Panfrost (kernel `drivers/gpu/drm/panfrost` existe no 6.1 e aceita `arm,mali-bifrost`) + Mesa |
+| Gralloc | `android.hardware.graphics.allocator@4.0` da RK | manifesto VINTF | minigbm (`android.hardware.graphics.allocator-service.minigbm`, `mapper.minigbm`) |
+| Vídeo | Codec2 `c2.rk.*` (avc, hevc, vp9, vp8, mpeg2, m4v, h263 dec; avc, hevc enc) em `libcodec2_rk_component.so` + `libmpp.so`, kernel `mpp_service` | `vendor/etc/media_codecs_c2_base.xml`, `vendor/lib` | software primeiro; depois MPP + Codec2 de fonte aberta |
+| Áudio | HAL `audio.primary.rk30board.so` (HIDL 7.0). Card 0 I2S1 (codec mudo, alto-falante), card 1 I2S3 captura do RK628 | `docs/hdmi-audio.md`, `audio_policy_configuration.xml` | HAL AIDL de referência do AOSP com tinyalsa no card 0; captura HDMI pelo TV input |
+| Wi-Fi | AIC8800D80 por SDIO, `aic8800_bsp.ko` + fdrv, `libwifi-hal-aic.so` (fechada) | dmesg `aicbsp_sdio_probe ... USE AIC8800D80`, `vendor/lib` | driver aberto (porte em andamento por outro trabalho), nl80211, wpa_supplicant do AOSP |
+| Bluetooth | AIC8800 por **UART1 (`/dev/ttyS1`) a 1,5 Mbaud**; o patch do BT é carregado pelo `aic8800_bsp` pelo SDIO; `libbt-vendor_aic.so` (fechada) ajusta baud e sono; HIDL bluetooth 1.0 | `vendor/etc/bluetooth/bt_vendor.conf`, dmesg `aicbt_patch_table_load ... uart_baud 1500000` | `hci_uart` (H4) do kernel + HAL AIDL padrão do AOSP. A conferir: o que o `libbt-vendor_aic` faz além do baud |
+| Controle IR | `remotectl-pwm` no PWM3, tabelas no DT, `/vendor/usr/keylayout/fdd70030_pwm.kl` | `vendor/usr/keylayout` | mesmo driver no 6.1; keylayout próprio na árvore |
+| Teclas do painel | `adc-keys` (SARADC canal 1) e `gpio-keys` (energia) | DT | `Generic.kl` resolve (BACK, DPAD, ENTER, POWER) |
+| Motor de foco | driver fechado da TXCZ (`usb-cam-gpio`), `/sys/class/motor_cc/motor_cc/{motor,hd_camera_on}`; o controle IR mexe no motor dentro do kernel | `reverse-engineering/libfocus/README.md` | driver novo no kernel com a mesma interface sysfs (pendente) |
+| LEDs/ventoinha | `gpio-leds`: `green`, `red`, `Fan_h`, `Lcd_power` | `docs/kernel-6.1.md` | iguais no 6.1; permissões no `init.rk3566.rc` |
+| Acelerômetro | SC7A20 no I2C0 pelo framework `gsensor` da Rockchip + `sensors@1.0` da RK (fechado) | dmesg, manifesto | driver `sc7a20` existe no 6.1; falta um HAL de sensores (AIDL) |
+| Entrada HDMI | RK628 → MIPI-CSI → rkisp; app `com.android.rockchip.camera2` (rkCamera3) + camera provider 2.4 legado | `docs/hardware.md` | driver RK628 existe no 6.1 (desligado); TV input HAL próprio ou câmera externa do AOSP; app aberto |
+| Vendor storage | `/dev/vendor_storage` (ioctl); id 50 = modo de instalação, lido pelo U-Boot para girar o logo | `reverse-engineering/MAP.md` | `rk_vendor_storage` existe no 6.1; nó 0660 system no ueventd |
+| Segurança | KeyMint, Gatekeeper e Weaver no OP-TEE (TA fechada) | manifesto VINTF | KeyMint/Gatekeeper por software no começo |
+| PQ | `libpq.so`/`librkswpq.so` (fechadas) | `reverse-engineering/display/README.md` | sem PQ; brilho/contraste/saturação pela matriz de cor do SurfaceFlinger |
+
+Props da TXCZ que o app `io.github.hy300.settings` usa, e quem passa a ler cada uma:
+
+| Prop | Hoje quem lê | No Lineage |
+|---|---|---|
+| `persist.sys.keystone.{lt,lb,rt,rb,update}` | SurfaceFlinger + librkgfx_dc | o patch de keystone no SurfaceFlinger, mesmo formato ("x,y" em px de 1280x720) |
+| `persist.sys.keystone.*.init.xy`, `persist.txcz.install.model`, `persist.txcz.trapezoid.*`, `persist.txcz.screen.*` | só o app | só o app (estado dele) |
+| `persist.txcz.source`, `persist.txcz.boot.app` | `services.jar` da TXCZ | o próprio app (BootReceiver abre o app escolhido) |
+| `persist.vendor.{brightness,contrast,saturation,hue}.main` + `vendor.display.timeline` | HWC da Rockchip | não existe no drm_hwcomposer; trocar pela matriz de cor do SurfaceFlinger |
+| `persist.bluetooth.rka2dpsink` | pilha BT da Rockchip | A2DP sink do AOSP (`bluetooth.profile.a2dp.sink.enabled`), a conferir |
+| vendor storage id 50 | U-Boot | o app grava pelo `/dev/vendor_storage` (precisa de um auxiliar nativo) |
+
+O app hoje grava props com `setprop` porque o SELinux está permissive. No Lineage ele vira
+**app de plataforma** (`android_app_import` com `certificate: "platform"`), com
+`property_contexts` próprios para `persist.sys.keystone.` e `persist.txcz.`, e com acesso aos
+sysfs do motor e dos LEDs pela sepolicy. Assim funciona com o SELinux enforcing.
+
+## Kernel
+
+### O que o Android 17 aceita
+
+`android-17.0.0_r1`, `hardware/interfaces/compatibility_matrices/Android.bp`: o framework
+aceita aparelhos com FCM 7, 8, 202404, 202504 e 202604. Os kernels de cada nível:
+
+| FCM | Kernels |
+|---|---|
+| 7 (Android 13) | 5.10, 5.15 |
+| 8 (Android 14) | 5.15, **6.1** |
+| 202404 (15) | 6.6 |
+| 202504 (16) | 6.12 |
+| 202604 (17) | 6.18 |
+
+Logo o manifesto do HY300 declara `target-level="8"`. Os requisitos de config estão em
+`kernel/configs/u/android-6.1/` (LineageOS/android_kernel_configs, branch lineage-24.0):
+`android-base.config` + `android-base-conditional.xml`, `minlts="6.1.0"`.
+
+### O nosso 6.1 contra esses requisitos
+
+Ferramenta nova: `tools/kconfig_check.py` (testes em `tests/test_kconfig_check.py`).
+
+```sh
+python3 -I tools/kconfig_check.py <kernel_configs>/u/android-6.1 <build>/.config --kernel-version 6.1.172
+```
+
+Com o `.config` do marco 1 (`rockchip_linux_defconfig` + `rk3566.config` + `rk3566_hy300.config`):
+**170 diferenças**, versão ok (6.1.172 >= 6.1.0). Quase tudo é config de um kernel Linux comum:
+binder/binderfs, SELinux e audit, BPF e cgroup BPF, netfilter e xt_*, fscrypt e fs-verity,
+dm-verity/dm-snapshot, PSI, taskstats, `CPU_FREQ`, `PREEMPT`, `MODVERSIONS`, `SHADOW_CALL_STACK`,
+e o que é proibido (`DEVMEM`, `FHANDLE`, `FW_CACHE`, `MODULE_FORCE_UNLOAD`, `NFS_FS`, `SYSVIPC`).
+Três exigem **clang/LLVM** (`CC_IS_CLANG`, `LD_IS_LLD`, `AS_IS_LLVM`): o build atual é GCC.
+
+Oito símbolos exigidos **não existem** na árvore `hy300-6.1` (são do Android Common Kernel):
+`ASHMEM`, `DM_DEFAULT_KEY`, `CPU_FREQ_TIMES`, `UID_SYS_STATS`, `NETFILTER_XT_MATCH_QUOTA2`,
+`NETFILTER_XT_MATCH_QUOTA2_LOG`, `USB_CONFIGFS_F_ACC`, `USB_CONFIGFS_F_AUDIO_SRC`. Os cinco
+primeiros continuam exigidos nos requisitos do 6.6 e do 6.12, então o Android ainda conta com
+eles. O branch `develop-6.1` da Rockchip é o BSP Linux: sem vendor hooks, sem incfs, sem
+fuse-bpf.
+
+### Duas saídas
+
+1. **Portar os drivers do ACK para o nosso BSP Linux** (ashmem, dm-default-key,
+   cpufreq_times, uid_sys_stats, xt_quota2; os dois de gadget USB não fazem falta, não há porta
+   de dispositivo) e escrever um fragmento Android. Trabalho contido, mas fica um kernel que
+   ninguém mais usa com Android.
+2. **Levar os patches do HY300 para o kernel Rockchip Android 6.1** (ACK + BSP Rockchip)
+   que a organização Lineage-Rockchip publica em `github.com/Lineage-Rockchip/android_kernel_rockchip_kernel-6.1`
+   (branch `lineage-23.2`, origem Khadas). Conferido pela API do GitHub: `SUBLEVEL = 172` (o
+   mesmo 6.1.172 do nosso), tem `drivers/staging/android/ashmem.c`, `drivers/md/dm-default-key.c`,
+   `fs/incfs`, `drivers/android/vendor_hooks.c`, `gki_defconfig` + `rockchip_gki.config`, e os
+   arquivos que o nosso DTS inclui (`rk3566-box-demo-v10.dtsi`, `rk3568-android.dtsi`), além de
+   `panfrost`, `rk_vendor_storage` e `rockchip_pwm_remotectl`. Não tem o AIC8800.
+
+**Recomendação: a saída 2.** Os patches do HY300 são poucos (DTS, sequência SPI do painel no
+`panel-simple`, DT embutido, sinal de vida, AIC8800) e a base passa a ser a mesma que outros
+aparelhos Rockchip usam no Lineage. Decisão do usuário, porque muda o branch em que o outro
+trabalho (Wi-Fi) está.
+
+Mais pontos do kernel:
+
+- **Panfrost no DT**: o nó `gpu@fde60000` do BSP tem `clock-names = "clk_mali", "clk_gpu"`. O
+  Panfrost pega o primeiro clock sem nome e o de barramento pelo nome `"bus"`; com os nomes do
+  BSP o `CLK_GPU` não seria ligado. No DT do HY300: `clock-names = "gpu", "bus"` (como no
+  mainline) quando trocar `MALI_BIFROST` por `DRM_PANFROST`.
+- **VPU duplicada no DT**: `video-codec@fdea0400` (hantro, V4L2) e `vdpu@fdea0400` (MPP) usam
+  os mesmos registradores. Ligar um só: MPP (cobre o rkvdec com HEVC/VP9 4K) ou hantro (só
+  H.264/VP8/MPEG-2 até 1080p, mas V4L2 padrão).
+- **Tamanho**: a `Image` do marco 1 tem 38,8 MiB; com `gzip -9`, 14,5 MB. O defconfig Linux do
+  BSP liga muita coisa que o HY300 não tem; um defconfig Android com módulos diminui mais.
+- `kernel/configs` do checkout local ainda não estava baixado; os arquivos foram lidos do
+  GitHub do LineageOS (mesmo branch).
+
+## Boot
+
+- **Header v2 continua valendo no Lineage 24.** `build/make` (lineage-24.0,
+  `core/board_config.mk`): `vendor_boot` só é gerado com `BOARD_BOOT_HEADER_VERSION >= 3`.
+  Com v2 o ramdisk do boot é o do primeiro estágio, e o fstab vai nele.
+- **resource.img**: `TARGET_BOOTLOADER_IS_2ND := true` faz o `core/Makefile` passar
+  `--second $(PRODUCT_OUT)/2ndbootloader` ao mkbootimg (boot e recovery). A árvore copia
+  para lá o resource do próprio aparelho (logo da capivara + `rk-kernel.dtb` de fábrica). O
+  U-Boot continua com o DT de fábrica e o kernel usa o embutido, como no marco 1. Os
+  `device/*/*/build/tasks/*.mk` entram no build (`core/Makefile`, linha ~8112).
+- **ID do header**: o U-Boot de fábrica confere o SHA-1 do header. O mkbootimg do Lineage
+  calcula com 4 bytes a mais (patch do `--dt`); a árvore Lineage-Rockchip documenta o mesmo
+  erro ("Hash from header ... Failed to load android image"). `tools/mkbootimg_hy300.py` da
+  árvore (`BOARD_CUSTOM_MKBOOTIMG`) regrava o ID; o teste confere contra o `boot.img` de
+  fábrica.
+- **Tamanho da `boot`**: 40 MiB. A `Image` crua do 6.1 (38,8 MiB) + ramdisk + resource
+  (2,9 MB) não cabe. `Image.gz` (14,5 MB) cabe. O U-Boot tem gzip, lz4, "Uncompressing %s" e
+  "Can't get image compression!" no caminho do `bootm` (strings do `uboot.img`); só o teste
+  no slot `recovery` confirma que ele descomprime uma imagem Android. Se não descomprimir: kernel
+  menor com módulos (ainda cabe só se a `Image` ficar abaixo de ~36 MB).
+- **cmdline**: vem toda do boot.img (a de fábrica está no header; o U-Boot só acrescenta
+  `storagemedia`, `androidboot.mode`, `serialno`, `verifiedbootstate`, `dtb_idx` e `earlycon`).
+  `androidboot.hardware=rk3566`. **`androidboot.boot_devices=fe310000.mmc`**: no 6.1 o eMMC
+  é `mmc@fe310000`; o `fe310000.sdhci` da fábrica deixaria o `/dev/block/by-name` vazio.
+- Endereços (base `0x10000000`, kernel `+0x8000`, ramdisk `+0x1000000`, second `+0xf00000`,
+  tags `+0x100`, dtb `+0x1f00000`) iguais aos do boot.img de fábrica.
+
+## Gráficos
+
+O que o Android 17 traz (`android-17.0.0_r1`):
+
+- `external/drm_hwcomposer`: tem `hwc3/` e o módulo `android.hardware.composer.hwc3-service.drm`;
+- `external/minigbm`: `cros_gralloc/aidl` (`android.hardware.graphics.allocator-service.minigbm`),
+  `mapper_stablec` (`mapper.minigbm`), `rockchip.c` (só compila com `DRV_ROCKCHIP`, que o
+  `Android.bp` não oferece; `minigbm.platform=generic` usa dma-heap + dumb buffers);
+- `external/mesa3d` (26.1.0-devel): o `Android.bp` gerado pelo meson2hermetic compila **só o
+  gfxstream** (emulador/virtio). O Panfrost está no fonte, mas sem regra de build.
+
+Logo o Mesa com Panfrost entra como no GloDroid: `GloDroid/aospext` (Apache-2.0, makefiles que
+rodam meson dentro do build do AOSP) + Mesa upstream, por `local_manifest`. Os blobs Mali G52 de
+64 bits existem (`Lineage-Rockchip/proprietary_vendor_rockchip_gpu/MaliG52`), mas são da
+Rockchip, não podem ir para o nosso repositório e amarram a ABI ao Android em que foram feitos.
+Ficam só como plano B local.
+
+### Keystone
+
+A correção de 4 cantos é uma homografia aplicada na composição final. Proposta: patch em
+`frameworks/native` (SurfaceFlinger/RenderEngine Skia):
+
+1. ler `persist.sys.keystone.{lt,lb,rt,rb}` quando `persist.sys.keystone.update` for 1 (e
+   voltar para 0), com o mesmo significado de hoje: deslocamento "x,y" de cada canto em px de
+   1280x720, x para a direita, y para cima;
+2. converter para o painel 1024x600 (fator 0,8 em x, 0,833 em y) e montar a matriz 3x3;
+3. com keystone diferente de zero, forçar composição pelo cliente (GPU) e aplicar a matriz
+   (`SkMatrix` com perspectiva) no canvas do display; fora do quadrilátero fica preto.
+
+Assim o app de configurações não muda nada. Custo: uma passada de GPU por quadro, como na
+fábrica. Alternativa sem mexer no framework (passada GLES dentro do drm_hwcomposer) é mais
+trabalho e o drm_hwcomposer não tem compositor GPU. A conferir no código quando o
+`frameworks/native` do checkout chegar.
+
+## Vídeo
+
+- Kernel: `mpp_service` (MPP) e `hantro`/`rkvdec` (V4L2) existem no 6.1.
+- Userspace: MPP (`rockchip-linux/mpp`) e Codec2 da Rockchip têm fonte pública
+  (`rockchip-toybrick/rk_platform_vendor_rockchip_codec2`, Apache-2.0;
+  `Lineage-Rockchip/android_hardware_rockchip_codec2`, lineage-23.2). Não verificado: se o
+  Codec2 da Rockchip depende de metadado do gralloc da Rockchip (aí precisa adaptar ao minigbm).
+- Primeiro marco com os codecs de software do AOSP (`c2.android.*`): 720p em H.264 deve
+  servir; HEVC/VP9 1080p não.
+
+## Testar sem regravar a `super`
+
+O sistema novo tem de bootar antes de a `super` ser regravada. Proposta:
+
+1. boot.img do Lineage gravado na `recovery` (o `scripts/reboot-to-test-slot.sh` já entra nela
+   sem tocar na `misc`). O ramdisk do boot não tem `/system/bin/recovery`, então o init sobe o
+   Android normal;
+2. um pendrive na USB-A com GPT e três partições com nome: `super` do Lineage, `metadata` e
+   `userdata`;
+3. cmdline do teste com `androidboot.boot_devices=fe310000.mmc,<caminho do xHCI>`,
+   `androidboot.super_partition=<nome no pendrive>` e `androidboot.fstab_suffix=usbtest`
+   (um `fstab.usbtest` que monta `/metadata` e `/data` do pendrive). O eMMC só é lido.
+
+A conferir no aparelho/código: o caminho de plataforma do xHCI do dwc3 (`usbdrd` →
+`usb@fcc00000` → `xhci-hcd.*.auto`) que o ueventd usa para criar o `by-name`, e o suporte a
+`fstab_suffix` e `super_partition` no init do Android 17. Plano B: criar `system_b`,
+`vendor_b` etc. nos ~1257 MiB livres da `super` (só cabe com EROFS) e bootar com
+`androidboot.slot_suffix=_b` e `slotselect` no fstab de teste.
+
+## Riscos
+
+| Risco | Efeito | Mitigação |
+|---|---|---|
+| U-Boot não descomprime `Image.gz` de boot.img Android | Lineage não cabe na `boot` | testar no slot `recovery` primeiro; kernel com módulos |
+| Kernel sem os requisitos do FCM 8 | falhas em netd/vold/memória compartilhada; pode aparecer o aviso de "problema interno" no boot | rebase no kernel Rockchip ACK ou portar os 5 drivers; `kconfig_check.py` até zerar |
+| Panfrost + drm_hwcomposer no VOP2 do BSP | tela preta, composição lenta | marco só de gráficos com `modetest`/`kmscube` antes do Android; plano B blob local |
+| 1,5 GB de RAM com Android 17 de 64 bits | lmkd mata apps, launcher recarrega | low_ram, zram 75 %, sem GMS, medir no marco de primeiro boot |
+| Apps só de 32 bits | não instalam | aceitar (VLC e AirScreen têm arm64) ou rever a decisão de ABI |
+| Keystone no SurfaceFlinger | patch grande no framework | manter o patch pequeno e isolado; testar no marco próprio |
+| Gravar a `super` de dentro do aparelho | sem fastboot por USB, erro deixa sem sistema | só depois de bootar pelo pendrive; backup da `super` já existe; MaskROM como último recurso |
+| Bluetooth do AIC8800 sem a `libbt-vendor` | sem BT | conferir se o `aic8800_bsp` deixa o chip pronto; senão escrever o equivalente aberto |
+| Entrada HDMI (RK628) | sem HDMI-in no começo | marco próprio, depois do resto |
+
+## Ordem de trabalho (marcos)
+
+1. **Kernel Android**: escolher a base (recomendado: Rockchip ACK 6.1.172), aplicar os
+   patches do HY300, config Android até o `kconfig_check.py` zerar (ou só sobrarem os
+   símbolos sem uso), build com clang. Boot pelo slot `recovery` com o initramfs de teste.
+2. **Boot comprimido**: `Image.gz` dentro de um boot.img v2 feito com o
+   `mkbootimg_hy300.py`, no slot `recovery`. Confirma o tamanho e o ID.
+3. **Gráficos fora do Android**: Panfrost + `modetest`/`kmscube` no initramfs de teste.
+4. **Primeiro build do Lineage TV** e boot pelo pendrive (SELinux permissive, só software).
+5. Áudio, Wi-Fi (driver do outro trabalho), Bluetooth, IR, KeyMint por software.
+6. **Keystone no SurfaceFlinger** e o app de configurações como app de plataforma.
+7. Motor de foco (driver novo com `/sys/class/motor_cc`), acelerômetro e HAL de sensores.
+8. Vídeo com MPP + Codec2.
+9. sepolicy e SELinux enforcing.
+10. Gravar a `super`, a `boot` e a recovery do Lineage no eMMC (backup antes).
+11. Entrada HDMI (RK628) e áudio da entrada.
+
+## O que depende do usuário
+
+- Decidir a base do kernel (saída 1 ou 2) e se o branch muda agora ou depois do Wi-Fi.
+- Pendrive dedicado ao teste (vai ser apagado) e estar presente nos boots de teste (controle).
+- Aceitar perder apps só de 32 bits, ou pedir a troca para 64/32.
+- Onde publicar a árvore (`~/android/device-hy300`, git local sem remoto).
+- Mais tarde: autorizar a gravação da `super`.
+
+## O que não foi verificado
+
+- Nada foi compilado: nem a árvore, nem o kernel com config Android.
+- `kernel/configs`, `vendor/lineage`, `external/mesa3d`, `external/minigbm`,
+  `external/drm_hwcomposer` e `hardware/interfaces` foram lidos fora do checkout (GitHub do
+  LineageOS e googlesource na tag `android-17.0.0_r1`); o `build/make` e o `device/lineage/atv`
+  foram lidos do checkout (objetos do `repo`, só leitura).
+- Se o U-Boot descomprime o kernel de um boot.img Android (só as strings indicam).
+- O caminho do xHCI no `by-name`, `fstab_suffix` e `super_partition` no Android 17.
+- Se o Codec2 da Rockchip funciona com o minigbm.
+- Se o `aic8800_bsp` sozinho deixa o Bluetooth pronto para o `hci_uart`.
+- Tamanho real das imagens do Lineage TV.
+- Densidade 170 na projeção.
