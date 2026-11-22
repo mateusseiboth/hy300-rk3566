@@ -4,6 +4,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.Toast;
@@ -13,7 +14,6 @@ import androidx.preference.PreferenceScreen;
 import androidx.preference.SwitchPreference;
 
 import java.util.Locale;
-import java.util.Map;
 
 public class AutoKeystoneFragment extends BasePrefs implements SensorEventListener {
     private volatile float livePitch = Float.NaN;
@@ -33,9 +33,10 @@ public class AutoKeystoneFragment extends BasePrefs implements SensorEventListen
         s.setTitle(R.string.cat_auto_ks);
         enable = toggle(s, "enable", R.string.auto_ks_enable, getString(R.string.auto_ks_enable_summary), (p, v) -> {
             boolean on = (Boolean) v;
+            Context app = ctx().getApplicationContext();
             Bg.run(() -> {
-                Sys.set(AutoKeystoneService.P_ENABLE, on ? "1" : "0");
-                if (!on) AutoKeystoneService.removeAuto(ctx());
+                SharedPrefsStore.autoKeystone(app).setEnabled(on);
+                if (!on) AutoKeystoneService.removeAuto(app);
             });
             if (on) AutoKeystoneService.start(ctx(), false); else AutoKeystoneService.stop(ctx());
             return true;
@@ -43,11 +44,11 @@ public class AutoKeystoneFragment extends BasePrefs implements SensorEventListen
         calibrate = action(s, "calibrate", R.string.auto_ks_calibrate, null, () -> {
             AutoKeystoneService.start(ctx(), true);
             Toast.makeText(ctx(), R.string.auto_ks_calibrating, Toast.LENGTH_LONG).show();
-            // Se o automático estiver desligado, o serviço calibra e pode ser parado depois.
+            // Com o automático desligado, o serviço só calibra e para.
         });
         invert = toggle(s, "invert", R.string.auto_ks_invert, getString(R.string.auto_ks_invert_summary), (p, v) -> {
             boolean on = (Boolean) v;
-            Bg.run(() -> Sys.set(AutoKeystoneService.P_INVERT, on ? "1" : "0"));
+            SharedPrefsStore.autoKeystone(ctx()).setInverted(on);
             if (enable.isChecked()) AutoKeystoneService.start(ctx(), false);
             return true;
         });
@@ -85,24 +86,22 @@ public class AutoKeystoneFragment extends BasePrefs implements SensorEventListen
     }
 
     private void refresh() {
-        Bg.load(Sys::getAll, this::show);
+        show(SharedPrefsStore.autoKeystone(ctx()));
     }
 
-    private void show(Map<String, String> p) {
+    private void show(AutoKeystoneState st) {
         if (!isAdded()) return;
-        boolean on = Sys.getInt(p, AutoKeystoneService.P_ENABLE, 0) == 1;
-        enable.setChecked(on);
-        invert.setChecked(Sys.getInt(p, AutoKeystoneService.P_INVERT, 0) == 1);
-        boolean cal = Sys.getInt(p, AutoKeystoneService.P_BDSTATE, 0) == 1;
-        String calText = cal
-                ? String.format(Locale.ROOT, "%.1f°", Sys.getFloat(p, AutoKeystoneService.P_ANGLE, 0))
+        enable.setChecked(st.isEnabled());
+        invert.setChecked(st.isInverted());
+        String calText = st.isCalibrated()
+                ? String.format(Locale.ROOT, "%.1f°", st.getAngle())
                 : getString(R.string.auto_ks_not_calibrated);
         calibrate.setSummary(getString(R.string.auto_ks_calibrate_summary, calText));
         float pitch = livePitch;
-        String run = Float.isNaN(AutoKeystoneService.lastPitch) ? "serviço parado" : "serviço ativo";
-        String st = Float.isNaN(pitch) ? "sem leitura do acelerômetro"
-                : String.format(Locale.ROOT, "inclinação %.1f°, em relação à calibração %+.1f°", pitch,
-                pitch - Sys.getFloat(p, AutoKeystoneService.P_ANGLE, 0));
-        status.setSummary(run + " · " + st);
+        String run = getString(Float.isNaN(AutoKeystoneService.lastPitch)
+                ? R.string.auto_ks_state_off : R.string.auto_ks_state_on);
+        String tilt = Float.isNaN(pitch) ? getString(R.string.auto_ks_no_sensor)
+                : getString(R.string.auto_ks_tilt, pitch, pitch - st.getAngle());
+        status.setSummary(run + ". " + tilt);
     }
 }

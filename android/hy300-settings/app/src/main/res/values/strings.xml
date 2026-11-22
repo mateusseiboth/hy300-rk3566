@@ -76,9 +76,9 @@
 
     <!-- Keystone automático -->
     <string name="auto_ks_title">Keystone automático</string>
-    <string name="auto_ks_running">Corrigindo a inclinação pelo acelerômetro</string>
+    <string name="auto_ks_running">Corrigindo a inclinação</string>
     <string name="auto_ks_enable">Ativar</string>
-    <string name="auto_ks_enable_summary">Corrige a inclinação vertical pelo acelerômetro, somando ao ajuste manual. Calibre na posição instalada antes de ativar.</string>
+    <string name="auto_ks_enable_summary">Corrige a imagem quando o projetor fica inclinado. Calibre antes de ativar.</string>
     <string name="auto_ks_calibrate">Calibrar agora</string>
     <string name="auto_ks_calibrate_summary">Deixe o projetor nivelado e parado. Atual: %1$s</string>
     <string name="auto_ks_calibrating">Calibrando… mantenha o projetor parado</string>
@@ -87,6 +87,10 @@
     <string name="auto_ks_invert_summary">Use se a correção estreitar o lado errado</string>
     <string name="auto_ks_not_calibrated">não calibrado</string>
     <string name="auto_ks_status">Estado</string>
+    <string name="auto_ks_state_on">Correção ligada</string>
+    <string name="auto_ks_state_off">Correção desligada</string>
+    <string name="auto_ks_no_sensor">Sem leitura do sensor de inclinação</string>
+    <string name="auto_ks_tilt">Inclinação %1$.1f°, %2$+.1f° desde a calibração</string>
 
     <!-- Foco -->
     <string name="focus_help">Segure ← / → (ou ↓ / ↑) para ajustar o foco · Voltar sair</string>

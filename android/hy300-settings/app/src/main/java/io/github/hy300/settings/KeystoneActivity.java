@@ -104,6 +104,11 @@ public class KeystoneActivity extends Activity {
         info.setText(txt);
     }
 
+    private void resetUser() {
+        ks.resetUser();
+        AutoKeystoneService.forgetAuto(this);
+    }
+
     private void apply() {
         KeystoneApplier.applyAsync(ks);
         refresh();
@@ -127,7 +132,7 @@ public class KeystoneActivity extends Activity {
             case KeyEvent.KEYCODE_PROG_RED:
             case KeyEvent.KEYCODE_R:
                 if (e.getRepeatCount() == 0) {
-                    if (page == PAGE_ZOOM) ks.setZoom(100); else ks.resetUser();
+                    if (page == PAGE_ZOOM) ks.setZoom(100); else resetUser();
                     Toast.makeText(this, R.string.ks_reset_done, Toast.LENGTH_SHORT).show();
                     apply();
                 }
