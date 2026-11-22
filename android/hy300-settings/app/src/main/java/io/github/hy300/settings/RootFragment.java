@@ -8,20 +8,15 @@ public class RootFragment extends BasePrefs {
     @Override
     protected void build(PreferenceScreen s) {
         s.setTitle(R.string.app_title);
-        link(s, "projection", R.string.cat_projection, getString(R.string.cat_projection_summary), ProjectionFragment.class);
-        link(s, "auto_ks", R.string.cat_auto_ks, null, AutoKeystoneFragment.class);
-        action(s, "focus", R.string.cat_focus, getString(R.string.cat_focus_summary),
-                () -> startActivity(new Intent(ctx(), FocusActivity.class)));
-        link(s, "source", R.string.cat_source, null, SourceFragment.class);
-        link(s, "image", R.string.cat_image, getString(R.string.cat_image_summary), ImageFragment.class);
-        link(s, "other", R.string.cat_other, null, OtherFragment.class);
-        link(s, "diag", R.string.cat_about, getString(R.string.cat_about_summary), DiagFragment.class);
-        action(s, "android_settings", R.string.open_android_settings, null, () -> {
-            Intent i = new Intent(android.provider.Settings.ACTION_SETTINGS);
-            i.setPackage("com.android.tv.set");
-            try { startActivity(i); } catch (Exception e) {
-                startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
-            }
-        });
+        icon(link(s, "projection", R.string.cat_projection, getString(R.string.cat_projection_summary), ProjectionFragment.class), R.drawable.ic_projection);
+        icon(link(s, "auto_ks", R.string.cat_auto_ks, getString(R.string.cat_auto_ks_summary), AutoKeystoneFragment.class), R.drawable.ic_auto_keystone);
+        icon(action(s, "focus", R.string.cat_focus, getString(R.string.cat_focus_summary),
+                () -> startActivity(new Intent(ctx(), FocusActivity.class))), R.drawable.ic_focus);
+        icon(link(s, "source", R.string.cat_source, getString(R.string.cat_source_summary), SourceFragment.class), R.drawable.ic_source);
+        icon(link(s, "image", R.string.cat_image, getString(R.string.cat_image_summary), ImageFragment.class), R.drawable.ic_image);
+        icon(link(s, "other", R.string.cat_other, getString(R.string.cat_other_summary), OtherFragment.class), R.drawable.ic_other);
+        icon(link(s, "diag", R.string.cat_about, getString(R.string.cat_about_summary), DiagFragment.class), R.drawable.ic_diag);
+        icon(action(s, "android_settings", R.string.open_android_settings, null,
+                () -> AndroidSettingsActivity.open(ctx())), R.drawable.ic_android_settings);
     }
 }

@@ -12,17 +12,21 @@
 
     <!-- Menu principal -->
     <string name="cat_projection">Projeção</string>
-    <string name="cat_projection_summary">Keystone, zoom, proporção e modo de instalação</string>
+    <string name="cat_projection_summary">Cantos, zoom, proporção e modo de instalação</string>
     <string name="cat_auto_ks">Keystone automático</string>
+    <string name="cat_auto_ks_summary">Corrige a imagem pela inclinação</string>
     <string name="cat_focus">Foco</string>
-    <string name="cat_focus_summary">Ajuste manual do motor de foco</string>
+    <string name="cat_focus_summary">Ajuste manual da nitidez</string>
     <string name="cat_source">Fonte e inicialização</string>
+    <string name="cat_source_summary">HDMI e o que abrir ao ligar</string>
     <string name="cat_image">Imagem</string>
-    <string name="cat_image_summary">Brilho, contraste, saturação, matiz e perfil de cor</string>
+    <string name="cat_image_summary">Brilho, contraste, saturação e matiz</string>
     <string name="cat_other">Outros</string>
+    <string name="cat_other_summary">Caixa de som, atalho do controle e LEDs</string>
     <string name="cat_about">Diagnóstico</string>
-    <string name="cat_about_summary">Permissões e estado das props</string>
+    <string name="cat_about_summary">Testes e valores atuais</string>
     <string name="open_android_settings">Configurações do Android</string>
+    <string name="android_settings_missing">Configurações do Android não encontradas</string>
 
     <!-- Projeção -->
     <string name="ks_corners">Correção de 4 cantos</string>
@@ -37,7 +41,6 @@
     <string name="ks_reset">Restaurar keystone</string>
     <string name="ks_reset_summary">Zera cantos e trapézio, zoom 100%. Mantém o modo de instalação.</string>
     <string name="ks_reset_done">Keystone restaurado</string>
-    <string name="ks_current">Valores atuais</string>
     <string name="ks_info_corners">Canto: %1$s  (ajuste %2$s px)\n↑↓←→ mover · OK próximo canto · MENU passo: %3$s · 0/Del restaurar · Voltar sair</string>
     <string name="ks_info_trapezoid">Trapézio  V: %1$d   H: %2$d\n↑ estreita o topo · ↓ a base · ← a esquerda · → a direita\nMENU passo: %3$s · 0/Del restaurar · Voltar sair</string>
     <string name="ks_info_zoom">Zoom: %1$d%%\n←→ ou ↑↓ ajustar (passo 5, ou 1 no passo fino) · 0/Del = 100%% · Voltar sair</string>
@@ -91,9 +94,10 @@
     <string name="auto_ks_state_off">Correção desligada</string>
     <string name="auto_ks_no_sensor">Sem leitura do sensor de inclinação</string>
     <string name="auto_ks_tilt">Inclinação %1$.1f°, %2$+.1f° desde a calibração</string>
+    <string name="auto_ks_tilt_uncalibrated">Inclinação %1$.1f°</string>
 
     <!-- Foco -->
-    <string name="focus_help">Segure ← / → (ou ↓ / ↑) para ajustar o foco · Voltar sair</string>
+    <string name="focus_help">Segure → ou ↑ para um lado e ← ou ↓ para o outro até a grade ficar nítida · Voltar sair</string>
     <string name="focus_moving">Ajustando…</string>
     <string name="focus_limit">Fim de curso do motor</string>
     <string name="focus_unavailable">Motor de foco não encontrado</string>
@@ -103,7 +107,8 @@
     <string name="src_boot">Ao ligar, abrir</string>
     <string name="src_boot_home">Tela inicial</string>
     <string name="src_boot_hdmi">Entrada HDMI</string>
-    <string name="src_boot_app">Aplicativo: %1$s</string>
+    <string name="src_boot_app">Aplicativo</string>
+    <string name="src_boot_app_none">Escolha um aplicativo</string>
     <string name="src_pick_app">Escolher aplicativo</string>
     <string name="src_hdmi_missing">Visualizador HDMI não encontrado</string>
     <string name="src_saved">Salvo</string>
@@ -117,16 +122,22 @@
 
     <!-- Outros -->
     <string name="other_a2dp">Modo caixa de som Bluetooth (A2DP sink)</string>
-    <string name="other_a2dp_summary">persist.bluetooth.rka2dpsink. Reinicie o Bluetooth ou o aparelho para aplicar.</string>
-    <string name="other_f12">Tecla de configurações (F12) abre este app</string>
-    <string name="other_f12_summary">Usa um serviço de acessibilidade que intercepta a tecla antes do framework</string>
-    <string name="other_f12_need_perm">Sem WRITE_SECURE_SETTINGS. Rode: adb shell pm grant io.github.hy300.settings android.permission.WRITE_SECURE_SETTINGS</string>
-    <string name="other_txcz">Abrir app de configurações da fabricante (TXCZ)</string>
+    <string name="other_a2dp_summary">Vale depois de reiniciar o projetor.</string>
+    <string name="other_f12">Tecla de configurações do controle abre este app</string>
+    <string name="other_f12_summary">Desligado, a tecla não abre nada.</string>
+    <string name="other_f12_need_perm">Não foi possível mudar o atalho. Reinstale o app pelo script de instalação.</string>
+
+    <string name="other_led_green">LED verde</string>
+    <string name="other_led_red">LED vermelho</string>
+    <string name="other_led_failed">Não foi possível mudar o LED. Reinicie o projetor e tente de novo.</string>
 
     <!-- Diagnóstico -->
     <string name="diag_run">Testar permissões</string>
     <string name="diag_system">Instalado como app de sistema</string>
+    <string name="diag_system_yes">Sim. Aparece nas Configurações do Android.</string>
+    <string name="diag_system_no">Não. Rode o script de instalação no sistema.</string>
+    <string name="diag_results">Resultado</string>
 
-    <string name="f12_service_desc">Faz a tecla de configurações do controle (F12) abrir as Configurações do projetor em vez do app TXCZ.</string>
+    <string name="f12_service_desc">Faz a tecla de configurações do controle abrir as Configurações do projetor.</string>
     <string name="write_failed">Falha ao gravar (veja Diagnóstico)</string>
 </resources>

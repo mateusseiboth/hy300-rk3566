@@ -100,8 +100,12 @@ public class AutoKeystoneFragment extends BasePrefs implements SensorEventListen
         float pitch = livePitch;
         String run = getString(Float.isNaN(AutoKeystoneService.lastPitch)
                 ? R.string.auto_ks_state_off : R.string.auto_ks_state_on);
-        String tilt = Float.isNaN(pitch) ? getString(R.string.auto_ks_no_sensor)
-                : getString(R.string.auto_ks_tilt, pitch, pitch - st.getAngle());
-        status.setSummary(run + ". " + tilt);
+        status.setSummary(run + ". " + buildTiltText(pitch, st));
+    }
+
+    private String buildTiltText(float pitch, AutoKeystoneState st) {
+        if (Float.isNaN(pitch)) return getString(R.string.auto_ks_no_sensor);
+        if (!st.isCalibrated()) return getString(R.string.auto_ks_tilt_uncalibrated, pitch);
+        return getString(R.string.auto_ks_tilt, pitch, pitch - st.getAngle());
     }
 }

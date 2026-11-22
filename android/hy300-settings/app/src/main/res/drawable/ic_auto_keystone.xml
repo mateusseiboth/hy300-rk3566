@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <!-- trapézio com seta de inclinação -->
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M6,7h12l3,11H3zM7.5,9l-2,7h13l-2,-7zM11,2h2v3h-2z"/>
+</vector>

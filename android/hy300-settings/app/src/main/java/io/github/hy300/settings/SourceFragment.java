@@ -23,7 +23,7 @@ public class SourceFragment extends BasePrefs {
         PreferenceCategory c = category(s, R.string.src_boot);
         home = radio(c, "home", getString(R.string.src_boot_home));
         hdmi = radio(c, "hdmi", getString(R.string.src_boot_hdmi));
-        app = radio(c, "app", getString(R.string.src_boot_app, "-"));
+        app = radio(c, "app", getString(R.string.src_boot_app));
         home.setOnPreferenceClickListener(p -> { save(Source::setHome); return true; });
         hdmi.setOnPreferenceClickListener(p -> { save(Source::setHdmi); return true; });
         app.setOnPreferenceClickListener(p -> {
@@ -31,7 +31,9 @@ public class SourceFragment extends BasePrefs {
             getParentSettings().onPreferenceStartFragment(this, pick);
             return true;
         });
+        // Só serve de destino para o clique em "Aplicativo" (abre a lista).
         pick = link(c, "pick", R.string.src_pick_app, null, AppPickerFragment.class);
+        pick.setVisible(false);
     }
 
     private SettingsFragment getParentSettings() {
@@ -75,6 +77,6 @@ public class SourceFragment extends BasePrefs {
         hdmi.setChecked(isHdmi);
         app.setChecked(!isHome && !isHdmi);
         String pkg = bootApp.split(",")[0];
-        app.setTitle(getString(R.string.src_boot_app, (!isHome && !isHdmi) ? Source.label(ctx(), pkg) : "-"));
+        app.setSummary((!isHome && !isHdmi) ? Source.label(ctx(), pkg) : getString(R.string.src_boot_app_none));
     }
 }

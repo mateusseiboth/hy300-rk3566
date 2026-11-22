@@ -7,7 +7,7 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceScreen;
 
 public class ProjectionFragment extends BasePrefs {
-    private Preference corners, trapezoid, zoom, current;
+    private Preference corners, trapezoid, zoom;
     private ListPreference ratio, mode;
     private Keystone ks;
 
@@ -35,11 +35,6 @@ public class ProjectionFragment extends BasePrefs {
             AutoKeystoneService.forgetAuto(ctx());
             Toast.makeText(ctx(), R.string.ks_reset_done, Toast.LENGTH_SHORT).show();
         });
-        current = new Preference(ctx());
-        current.setTitle(R.string.ks_current);
-        current.setSelectable(false);
-        current.setPersistent(false);
-        s.addPreference(current);
     }
 
     private interface Edit { void apply(Keystone k); }
@@ -66,6 +61,5 @@ public class ProjectionFragment extends BasePrefs {
         ratio.setValue(String.valueOf(k.ratio));
         trapezoid.setSummary(getString(R.string.ks_trapezoid_summary, k.trapV, k.trapH));
         zoom.setSummary(getString(R.string.ks_zoom_summary, k.zoom));
-        current.setSummary(k.describe());
     }
 }

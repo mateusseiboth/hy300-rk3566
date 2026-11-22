@@ -80,6 +80,11 @@ public abstract class BasePrefs extends LeanbackPreferenceFragmentCompat {
         return c;
     }
 
+    protected Preference icon(Preference p, int drawable) {
+        p.setIcon(drawable);
+        return p;
+    }
+
     protected Context ctx() {
         return getPreferenceManager().getContext();
     }
