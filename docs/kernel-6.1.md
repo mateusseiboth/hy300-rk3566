@@ -286,6 +286,16 @@ Objetivo: um terminal ao vivo no 6.1 sem console serial. Com `hy300.wifi=1` na c
 `/init` de teste carrega o driver do AIC8800, conecta na rede de casa com IP fixo, abre um
 `telnetd` (busybox, porta 23, `/bin/sh` de root, sem senha) e fica no ar até um prazo.
 
+**Testado no aparelho em 22/11/2026: funciona.** O telnet abriu cerca de 20 s depois do reboot
+(firmware carregado, conectado aos 27 s, gateway respondendo aos 28 s). O sysrq `b` pelo telnet
+volta ao Android, que subiu com Wi-Fi. Retrato do hardware tirado pelo telnet (sem dados de
+rede): placas ALSA `rockchip,rockchip-i2s-sound` e `rockchip,hdmiin`; entrada (IR, painel,
+energia, receptor 2.4G) ok; no I2C0 os sensores aparecem sem driver (`gs_sc7a20` em 0x19, além
+de 0x4c e 0x6b que a placa de referência declara); GPU `fde60000.gpu` sem driver (Mali desligado
+no config; o caminho é o Panfrost); sem cpufreq (CPU fixa em 1104 MHz pelo SCMI); sem a classe
+`motor_cc`; SoC a 67 °C. O driver do AIC8800 está com o log de depuração (`AICWFDBG`) ligado,
+que enche o console: baixar o nível.
+
 ### Chip e driver
 
 - **Variante: AIC8800D80, revisão U02.** O dmesg de fábrica (`kernel/dmesg-boot.txt`) mostra
