@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Declara o aparelho como Android TV (leanback) para a Play Store liberar apps de TV
+     (ex.: Projectivy Launcher). A ROM TXCZ declara type.television mas não leanback. -->
+<permissions>
+    <feature name="android.software.leanback" />
+</permissions>

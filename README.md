@@ -9,8 +9,8 @@ Objetivos:
 - [x] Root / acesso total (build `userdebug`, bootloader desbloqueado)
 - [x] Backup completo das partições
 - [x] Debloat reversível
-- [x] Launcher alternativo
-- [ ] Liberar apps Android TV na Play Store (`android.software.leanback`)
+- [x] Launcher alternativo (Projectivy via Aurora)
+- [x] Declarar `android.software.leanback` (apps de TV) — ver `docs/launcher-leanback.md`
 - [ ] Engenharia reversa do app de configurações da TXCZ (keystone, espelhamento, foco, fontes)
 - [ ] App de configuração próprio integrado às Configurações do Android
 - [ ] Áudio da entrada HDMI (RK628)
