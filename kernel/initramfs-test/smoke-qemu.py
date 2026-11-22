@@ -9,7 +9,9 @@ kernel com o initramfs e confere:
   - o /init tentou armar o watchdog (o virt não tem um, então registra a ausência);
   - o reset de emergência (sysrq b) aconteceu perto dos 20 s (o QEMU sai com -no-reboot);
   - com hy300.shutdown_debug=1, o /init usa reboot -f com initcall_debug ligado e o kernel
-    registra o shutdown de cada dispositivo antes de reiniciar.
+    registra o shutdown de cada dispositivo antes de reiniciar;
+  - com hy300.wifi=1 (o virt não tem SDIO), o /init apaga o BCB, escreve o relatório, registra
+    a falha do Wi-Fi, não reinicia aos 20 s e só reinicia no prazo de hy300.wifi_limit.
 
 O kernel precisa do config do marco 1 mais o fragmento qemu.config deste diretório
 (PL011 e virtio). O build-marco1.sh faz esse build à parte quando o QEMU está instalado.
@@ -94,6 +96,35 @@ def check_shutdown_debug(log):
     return failures
 
 
+WIFI_LIMIT = 50
+WIFI_EXPECTED = (
+    "hy300: [misc] misc: comando 'boot-recovery' apagado",
+    "hy300: [init] wifi: início",
+    "hy300: [init] relatório: fim",
+    "hy300: [wifi] FALHOU",
+    "hy300: [init] wifi: fim do prazo, sysrq b",
+    "sysrq: Resetting",
+)
+
+
+def check_wifi(log):
+    failures = [f"falta no log: {line}" for line in WIFI_EXPECTED if line not in log]
+    failures += ["o modo Wi-Fi reiniciou como o marco 1"] if "marco1: fim" in log else []
+    reboot_at = find_reboot_time(log)
+    in_window = reboot_at and WIFI_LIMIT <= reboot_at <= WIFI_LIMIT + 20
+    failures += [] if in_window else [f"modo Wi-Fi: reboot fora da janela: {reboot_at}"]
+    return failures
+
+
+def run_wifi_mode(image, initramfs, workdir, factory):
+    disk = os.path.join(workdir, "smoke-disk-wifi.img")
+    create_disk(disk, build_misc(factory))
+    log = run_qemu(image, initramfs, disk, f"hy300.wifi=1 hy300.wifi_limit={WIFI_LIMIT}")
+    with open(os.path.join(workdir, "smoke-qemu-wifi.log"), "w") as f:
+        f.write(log)
+    return check_wifi(log)
+
+
 def run_shutdown_debug(image, initramfs, workdir, factory):
     disk = os.path.join(workdir, "smoke-disk-shutdown.img")
     create_disk(disk, build_misc(factory))
@@ -113,6 +144,7 @@ def main(image, initramfs, workdir, factory=None):
         f.write(log)
     failures = check(log, before, read_misc(disk))
     failures += run_shutdown_debug(image, initramfs, workdir, factory)
+    failures += run_wifi_mode(image, initramfs, workdir, factory)
     for failure in failures:
         print("FALHOU:", failure)
     print("ok: smoke-qemu" if not failures else f"smoke-qemu: {len(failures)} falha(s), log em {workdir}")

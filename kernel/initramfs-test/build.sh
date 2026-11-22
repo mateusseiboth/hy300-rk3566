@@ -2,10 +2,13 @@
 # Monta o initramfs de teste do marco 1: busybox estático (aarch64, musl), /init e
 # /lib/hy300-test.sh. Nada é baixado sem conferir o SHA-256; nenhum binário vai para o repo.
 #
-# Uso: build.sh <fonte_do_kernel> <saida.cpio.gz> [dir_de_trabalho]
+# Uso: build.sh <fonte_do_kernel> <saida.cpio.gz> [dir_de_trabalho] [raiz_extra]
 #   fonte_do_kernel: árvore do kernel (dá os headers do Linux para o musl/busybox e o
 #                    gen_init_cpio, que cria /dev/console sem precisar de root)
 #   dir_de_trabalho: padrão ~/hy300-work/marco1/initramfs
+#   raiz_extra:      diretório copiado por cima da raiz, com os mesmos modos (o modo Wi-Fi
+#                    põe ali módulos, firmware, wpa_supplicant e a configuração da rede;
+#                    nada disso sai do ~/hy300-work)
 #
 # Requer: aarch64-linux-gnu-gcc (Fedora: gcc-aarch64-linux-gnu), make, curl, gzip.
 set -euo pipefail
@@ -14,6 +17,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 KSRC="$(cd "$1" && pwd)"
 OUT="$2"
 WORK="${3:-$HOME/hy300-work/marco1/initramfs}"
+EXTRA="${4:-}"
 CROSS="${CROSS_COMPILE:-aarch64-linux-gnu-}"
 JOBS="${JOBS:-$(nproc)}"
 
@@ -61,19 +65,37 @@ stage_rootfs() {
 	install -D -m 755 "$WORK/busybox/busybox" "$ROOTFS/bin/busybox"
 	install -D -m 755 "$HERE/init" "$ROOTFS/init"
 	install -D -m 644 "$HERE/hy300-test.sh" "$ROOTFS/lib/hy300-test.sh"
+	install -D -m 644 "$HERE/hy300-wifi.sh" "$ROOTFS/lib/hy300-wifi.sh"
+}
+
+BASE_DIRS="/bin /sbin /usr /usr/bin /usr/sbin /dev /proc /sys /tmp /lib /etc /var /var/run"
+
+# Diretórios e arquivos da raiz extra, com o modo de cada um (o wpa_supplicant.conf é 600).
+write_extra_list() {
+	[[ -n "$EXTRA" ]] || return 0
+	[[ -d "$EXTRA" ]] || { echo "raiz extra $EXTRA não existe" >&2; exit 1; }
+	find "$EXTRA" -mindepth 1 -type d -printf '/%P %m\n' | sort | while read -r dir mode; do
+		[[ " $BASE_DIRS " == *" $dir "* ]] || echo "dir $dir $mode 0 0"
+	done
+	find "$EXTRA" -type f -printf '/%P %m\n' | sort | while read -r file mode; do
+		echo "file $file $EXTRA$file $mode 0 0"
+	done
 }
 
 # Lista do gen_init_cpio: diretórios, /dev/console e os links do busybox.
 write_cpio_list() {
-	printf 'dir %s 755 0 0\n' /bin /sbin /usr /usr/bin /usr/sbin /dev /proc /sys /tmp /lib
+	# shellcheck disable=SC2086
+	printf 'dir %s 755 0 0\n' $BASE_DIRS
 	echo "nod /dev/console 600 0 0 c 5 1"
 	echo "nod /dev/kmsg 644 0 0 c 1 11"
 	echo "file /init $ROOTFS/init 755 0 0"
 	echo "file /lib/hy300-test.sh $ROOTFS/lib/hy300-test.sh 644 0 0"
+	echo "file /lib/hy300-wifi.sh $ROOTFS/lib/hy300-wifi.sh 644 0 0"
 	echo "file /bin/busybox $ROOTFS/bin/busybox 755 0 0"
 	grep -v '^/bin/busybox$' "$WORK/busybox/busybox.links" | while read -r link; do
 		echo "slink $link /bin/busybox 777 0 0"
 	done
+	write_extra_list
 }
 
 main() {

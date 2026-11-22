@@ -6,7 +6,11 @@
 # Uso: kernel/build-marco1.sh [fonte_do_kernel] [dir_de_trabalho] [backup_de_fabrica]
 #   padrões: ~/hy300-handoff/kernel-hy300-rk3566, ~/hy300-work/marco1, ~/hy300-backup
 # Variáveis: KBUILD_OUT (build do kernel, padrão ~/hy300-work/kbuild-6.1), JOBS,
-#            SMOKE=0 para pular o teste de fumaça no QEMU.
+#            SMOKE=0 para pular o teste de fumaça no QEMU,
+#            WIFI=1 para o modo Wi-Fi (hy300.wifi=1 na cmdline; módulos AIC8800, firmware,
+#            wpa_supplicant e rede no initramfs). Lê WIFI_CREDENTIALS (padrão
+#            ~/hy300-work/wifi/credenciais.conf, modo 600) e VENDOR_IMG (padrão
+#            ~/hy300-work/vendor.img); falha se faltar algum. Ver docs/kernel-6.1.md.
 #
 # Saída: <dir_de_trabalho>/recovery-marco1.img (+ .sha256). Gravar com
 # scripts/flash-test-recovery.sh (roteiro em docs/kernel-6.1.md).
@@ -19,6 +23,10 @@ FACTORY="${3:-$HOME/hy300-backup}"
 KOUT="${KBUILD_OUT:-$HOME/hy300-work/kbuild-6.1}"
 JOBS="${JOBS:-$(nproc)}"
 SMOKE="${SMOKE:-1}"
+WIFI="${WIFI:-0}"
+WIFI_WORK="${WIFI_WORK:-$HOME/hy300-work/wifi}"
+WIFI_CREDENTIALS="${WIFI_CREDENTIALS:-$WIFI_WORK/credenciais.conf}"
+VENDOR_IMG="${VENDOR_IMG:-$HOME/hy300-work/vendor.img}"
 
 CROSS=aarch64-linux-gnu-
 DTB_NAME=rk3566-hy300.dtb
@@ -27,11 +35,14 @@ MARK="hy300.test=marco1 panic=10"
 # Parâmetros extras do teste, depois da marca. console=tty0 por último põe o log do kernel e o
 # do /init na tela (framebuffer); hy300.shutdown_debug=1 troca o fim por reboot -f com log.
 EXTRA_CMDLINE="${EXTRA_CMDLINE-console=tty0}"
+[[ "$WIFI" == 1 ]] && EXTRA_CMDLINE="${EXTRA_CMDLINE:+$EXTRA_CMDLINE }hy300.wifi=1"
 RECOVERY_PART_SIZE=113246208
 
 IMAGE="$KOUT/arch/arm64/boot/Image"
 DTB="$KOUT/arch/arm64/boot/dts/rockchip/$DTB_NAME"
 INITRAMFS="$WORK/initramfs-marco1.cpio.gz"
+WIFI_ROOT="$WORK/wifi-root"
+AIC_MODULES=(aic8800_bsp aic8800_fdrv)
 OUT="$WORK/recovery-marco1.img"
 
 # Nome neutro no "Linux version": a imagem não deve carregar usuário/máquina de quem compilou.
@@ -52,12 +63,28 @@ build_kernel() {
 	echo ">> kernel: $(git -C "$KSRC" rev-parse --abbrev-ref HEAD) $(git -C "$KSRC" rev-parse --short HEAD)"
 	mkdir -p "$KOUT"
 	kmake "$KOUT" "${CONFIGS[@]}" >/dev/null
-	kmake "$KOUT" Image "rockchip/$DTB_NAME"
+	kmake "$KOUT" Image modules "rockchip/$DTB_NAME"
+}
+
+# Raiz extra do modo Wi-Fi, só em ~/hy300-work: credenciais e firmware nunca vão para o repo.
+build_wifi_root() {
+	echo ">> modo Wi-Fi: módulos, firmware, wpa_supplicant e rede"
+	rm -rf "$WIFI_ROOT"
+	python3 "$REPO/tools/wifi_payload.py" build --credentials "$WIFI_CREDENTIALS" \
+		--vendor-img "$VENDOR_IMG" --out "$WIFI_ROOT" || exit 1
+	mkdir -p "$WIFI_ROOT/lib/modules/aic8800" "$WIFI_ROOT/usr/sbin"
+	for module in "${AIC_MODULES[@]}"; do
+		"${CROSS}strip" --strip-debug -o "$WIFI_ROOT/lib/modules/aic8800/$module.ko" \
+			"$(find "$KOUT/drivers/net/wireless/aic8800" -name "$module.ko")"
+	done
+	"$REPO/kernel/wifi/build-wpa-supplicant.sh" "$WIFI_ROOT/usr/sbin" "$WIFI_WORK/build"
 }
 
 build_initramfs() {
 	echo ">> initramfs"
-	"$REPO/kernel/initramfs-test/build.sh" "$KSRC" "$INITRAMFS" "$WORK/initramfs"
+	local extra=()
+	[[ "$WIFI" == 1 ]] && { build_wifi_root; extra=("$WIFI_ROOT"); }
+	"$REPO/kernel/initramfs-test/build.sh" "$KSRC" "$INITRAMFS" "$WORK/initramfs" "${extra[@]}"
 }
 
 # O U-Boot de fábrica usa o rk-kernel.dtb do resource.img (seção second) como DT próprio e
@@ -106,8 +133,22 @@ verify_image() {
 	require_builtin_dtb "$check/kernel"
 	require_uboot_emmc "$check/res/rk-kernel.dtb"
 	grep -q "$MARK" "$check/header.json" || { echo "FALHOU: cmdline sem a marca"; exit 1; }
+	[[ "$WIFI" == 1 ]] && require_wifi_payload "$check"
 	sha256sum "$OUT" | tee "$OUT.sha256"
 	echo "ok: $(stat -c %s "$OUT") bytes (partição: $RECOVERY_PART_SIZE)"
+}
+
+require_wifi_payload() {
+	local listing="$1/initramfs.txt" path
+	grep -q 'hy300.wifi=1' "$1/header.json" || { echo "FALHOU: cmdline sem hy300.wifi=1"; exit 1; }
+	gzip -dc "$INITRAMFS" | cpio -it --quiet >"$listing"
+	for path in etc/wpa_supplicant.conf etc/hy300-wifi.conf usr/sbin/wpa_supplicant \
+		lib/modules/aic8800/aic8800_bsp.ko lib/modules/aic8800/aic8800_fdrv.ko \
+		lib/firmware/aic8800/fmacfw_8800d80_u02.bin; do
+		grep -qx "$path" "$listing" || { echo "FALHOU: initramfs sem $path"; exit 1; }
+	done
+	rm -f "$listing"
+	echo "ok: modo Wi-Fi no initramfs e na cmdline"
 }
 
 # Teste de fumaça do /init num kernel com PL011/virtio (build à parte, incremental).

@@ -20,16 +20,31 @@
 # segundos e o log no pstore sobrevive.
 #
 # A única escrita no eMMC é a do passo 2.
+#
+# Com hy300.wifi=1 o fim é outro (main_wifi): depois do relatório o /init sobe o Wi-Fi
+# (AIC8800D80), põe o IP fixo, abre o telnetd na porta 23 e fica no ar alimentando o
+# watchdog a cada WATCHDOG_FEED_WIFI segundos. Reinicia sozinho (sysrq b) no prazo de
+# hy300.wifi_limit segundos (padrão 900), ou WIFI_FAIL_GRACE segundos depois de uma falha.
+# `touch /tmp/hy300-ficar` pelo telnet desliga o reinício automático.
 
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 # shellcheck source=hy300-test.sh
 . /lib/hy300-test.sh
+# shellcheck source=hy300-wifi.sh
+. /lib/hy300-wifi.sh
 
 REPORT_AT=10
 REBOOT_AT=20
 SAFETY_REBOOT_AT=45
 WATCHDOG_TIMEOUT=60
 WATCHDOG=/dev/watchdog
+WATCHDOG_FEED_MARCO1=3600
+WATCHDOG_FEED_WIFI=10
+WIFI_LIMIT_DEFAULT=900
+WIFI_FAIL_GRACE=120
+WIFI_IFACE_WAIT=20
+WIFI_ASSOC_WAIT=60
+WIFI_STATUS_EVERY=15
 
 mount_basics() {
 	mount -t proc proc /proc
@@ -80,12 +95,13 @@ finish() {
 	reboot_now "marco1: fim, sysrq b (t=$(read_uptime) s)"
 }
 
-# O busybox `watchdog` alimenta uma vez ao abrir e depois só a cada hora: na prática o
-# watchdog dispara WATCHDOG_TIMEOUT segundos depois daqui, se nada reiniciar antes.
+# O busybox `watchdog` alimenta ao abrir e depois a cada $1 segundos. No marco 1 ($1 =
+# WATCHDOG_FEED_MARCO1, uma hora) o watchdog dispara WATCHDOG_TIMEOUT segundos depois daqui,
+# se nada reiniciar antes. No modo Wi-Fi ele é alimentado de verdade.
 arm_watchdog() {
 	[ -c "$WATCHDOG" ] || { log "watchdog: $WATCHDOG ausente"; return; }
-	watchdog -T "$WATCHDOG_TIMEOUT" -t 3600 "$WATCHDOG" || { log "watchdog: falha ao armar"; return; }
-	log "watchdog: armado, dispara em $WATCHDOG_TIMEOUT s"
+	watchdog -T "$WATCHDOG_TIMEOUT" -t "$1" "$WATCHDOG" || { log "watchdog: falha ao armar"; return; }
+	log "watchdog: armado, dispara em $WATCHDOG_TIMEOUT s, alimentado a cada $1 s"
 }
 
 # Se algo travar no relatório, o reboot acontece mesmo assim.
@@ -161,9 +177,87 @@ write_report() {
 	report_section pstore "$KMSG" ls -l /sys/fs/pstore
 }
 
+wifi_log() {
+	echo "hy300: [wifi] $*" >>"$KMSG"
+}
+
+# Encurta o prazo para WIFI_FAIL_GRACE segundos: a mensagem fica na tela e o aparelho volta
+# ao Android sozinho.
+fail_wifi() {
+	wifi_error=$(echo "$1" | tr '\n' ' ')
+	wifi_log "FALHOU: $wifi_error"
+	shorten_deadline "$WIFI_DEADLINE_FILE" $(($(read_uptime) + WIFI_FAIL_GRACE))
+	return 1
+}
+
+# Quando o prazo chega: kill -9 no daemon do watchdog (sem o fechamento mágico, o watchdog
+# segue armado e reseta se o sysrq b travar) e reset de emergência.
+start_deadline_watch() {
+	(
+		announced=
+		while :; do
+			sleep 5
+			[ -e "$WIFI_STAY_FILE" ] && [ -z "$announced" ] && { wifi_log "reinício automático desligado ($WIFI_STAY_FILE)"; announced=1; }
+			now=$(read_uptime)
+			is_deadline_reached "$now" "$(read_deadline "$WIFI_DEADLINE_FILE")" "$WIFI_STAY_FILE" || continue
+			for pid in $(pidof watchdog); do kill -9 "$pid"; done
+			reboot_now "wifi: fim do prazo, sysrq b (t=$now s)"
+		done
+	) &
+}
+
+# Só informativo: há roteador que não responde ao ping.
+report_gateway() {
+	ping -c 1 -W 3 "$WIFI_GATEWAY" >/dev/null 2>&1 || { wifi_log "gateway $WIFI_GATEWAY não respondeu ao ping"; return; }
+	wifi_log "gateway $WIFI_GATEWAY responde"
+}
+
+bring_up_wifi() {
+	wifi_log "carregando aic8800_bsp e aic8800_fdrv"
+	result=$(load_wifi_modules "$WIFI_MODULE_DIR" "$WIFI_FIRMWARE_DIR" 2>&1) || { fail_wifi "$result"; return 1; }
+	iface=$(wait_for_wireless_iface "$WIFI_IFACE_WAIT") || { fail_wifi "nenhuma interface sem fio em $WIFI_IFACE_WAIT s"; return 1; }
+	wifi_log "interface $iface, iniciando o wpa_supplicant"
+	start_wpa_supplicant "$iface" "$WIFI_WPA_CONF" "$WIFI_WPA_LOG" || { fail_wifi "wpa_supplicant não iniciou"; return 1; }
+	state=$(wait_for_wpa_completed "$iface" "$WIFI_ASSOC_WAIT") || { fail_wifi "sem conexão em $WIFI_ASSOC_WAIT s (estado $state)"; return 1; }
+	wifi_log "conectado"
+	configure_static_ip "$iface" "$WIFI_NET_CONF" || { fail_wifi "não foi possível configurar o IP"; return 1; }
+	announce_ip "$iface" "$(read_iface_ip "$iface")"
+	report_gateway
+	start_telnetd "$WIFI_TELNET_PORT" || { fail_wifi "telnetd não iniciou"; return 1; }
+	wifi_log "telnetd na porta $WIFI_TELNET_PORT"
+}
+
+show_wifi_status() {
+	now=$(read_uptime)
+	deadline=$(read_deadline "$WIFI_DEADLINE_FILE")
+	[ -n "$wifi_error" ] && { wifi_log "FALHOU: $wifi_error; $(build_countdown "$now" "$deadline" "$WIFI_STAY_FILE")"; return; }
+	wifi_log "$(build_wifi_status "$(read_iface_ip "$iface")" "$now" "$deadline" "$WIFI_STAY_FILE")"
+}
+
+main_wifi() {
+	arm_watchdog "$WATCHDOG_FEED_WIFI"
+	start=$(read_uptime)
+	limit=$(read_cmdline_number hy300.wifi_limit "$WIFI_LIMIT_DEFAULT")
+	echo $((start + limit)) >"$WIFI_DEADLINE_FILE"
+	start_deadline_watch
+	log "wifi: início (t=$start s), reinicia em $limit s; touch $WIFI_STAY_FILE para ficar"
+	handle_misc
+	sleep_until $((start + REPORT_AT))
+	log "relatório: início"
+	write_report
+	log "relatório: fim"
+	wifi_error=
+	bring_up_wifi
+	while :; do
+		show_wifi_status
+		sleep "$WIFI_STATUS_EVERY"
+	done
+}
+
 main() {
 	mount_basics
-	arm_watchdog
+	is_wifi_mode && main_wifi
+	arm_watchdog "$WATCHDOG_FEED_MARCO1"
 	start=$(read_uptime)
 	start_safety_reboot $((start + SAFETY_REBOOT_AT))
 	log "marco1: início (t=$start s)"
