@@ -1,0 +1,31 @@
+plugins {
+    id 'com.android.application'
+}
+
+// RRO (Runtime Resource Overlay) para o TvSettings do aparelho (com.android.tv.set).
+// Só recursos, sem código. Ver README, seção "Configurações do Android completas".
+android {
+    namespace 'io.github.hy300.tvsettings.overlay'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.hy300.tvsettings.overlay'
+        minSdk 30
+        targetSdk 32
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    lint {
+        abortOnError false
+        disable 'ExpiredTargetSdkVersion', 'OldTargetApi'
+    }
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:hasCode="false" android:label="HY300 TvSettings overlay" />
+    <!-- Estático (sempre ligado) quando instalado em /product/overlay; o TvSettings não declara
+         <overlayable>, então um overlay pré-instalado pode trocar qualquer recurso dele. -->
+    <overlay
+        android:targetPackage="com.android.tv.set"
+        android:isStatic="true"
+        android:priority="10" />
+</manifest>

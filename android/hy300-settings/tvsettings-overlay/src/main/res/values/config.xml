@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- O build da TXCZ usa "Classic", cujo device.xml foi enxugado (sem Armazenamento, Protetor
+         de tela, Acessibilidade, Reiniciar). "X" é o sabor completo que a Rockchip mantém no
+         mesmo APK (main_prefs_x + device_x, com Ecrã e Avançado). -->
+    <string name="config_tvSettingsFlavor" translatable="false" tools:ignore="MissingTranslation">X</string>
+</resources>
