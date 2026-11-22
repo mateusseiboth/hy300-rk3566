@@ -123,7 +123,7 @@ Commitado (o README do app tem a tabela de estado com [testado]/[não testado] e
   continuar funcionando), Wi-Fi AIC8800 (driver aberto, portar), QMI8658.
   Risco: sem fastboot por USB, a `super` nova terá de ser gravada de dentro do aparelho; ela só é tocada quando o sistema novo
   já bootar pelo slot `recovery`.
-- **LineageOS 24.0 (22/11, só planejamento):** inventário, decisões (Lineage TV, FCM 8 para o 6.1, kernel Rockchip ACK 6.1.172 recomendado, header v2 com resource de fábrica e `Image.gz`, Panfrost, teste pelo pendrive), riscos e marcos em `docs/lineageos.md`; esqueleto da árvore em `~/android/device-hy300` (git local); `tools/kconfig_check.py` mede o `.config` contra o `kernel/configs`.
+- **LineageOS 24.0 (22/11, só planejamento):** inventário, decisões (Lineage TV, FCM 8 para o 6.1, kernel Rockchip ACK 6.1.172 recomendado, header v2 com resource de fábrica e `Image.gz`, Panfrost, teste pelo pendrive), riscos e marcos em `docs/lineageos.md`; esqueleto da árvore em `~/android/device-hy300` (GitHub `mateusseiboth/android_device_hy300_rk3566`, branch `lineage-24.0`); `tools/kconfig_check.py` mede o `.config` contra o `kernel/configs`.
 
 ### 3. Pendências menores
 
