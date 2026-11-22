@@ -11,6 +11,10 @@
 #    O sysrq b não passa pelo shutdown dos drivers. No primeiro teste no aparelho o
 #    `reboot -f` apagou a ventoinha (shutdown do gpio-leds) e o reset não aconteceu.
 #
+# Com hy300.shutdown_debug=1 na cmdline o fim usa `reboot -f` com o initcall_debug ligado:
+# o kernel registra "<dispositivo>: shutdown" antes do shutdown de cada um, e a última linha
+# no pstore mostra onde o reboot trava. Se travar, o watchdog reinicia (ou desliga) o SoC.
+#
 # Logo no começo o watchdog de hardware é armado e nunca mais alimentado: se qualquer
 # coisa travar (inclusive o próprio reset), ele reinicia o SoC a quente em WATCHDOG_TIMEOUT
 # segundos e o log no pstore sobrevive.
@@ -58,6 +62,22 @@ reboot_now() {
 	log "$1"
 	sync
 	echo b >/proc/sysrq-trigger
+}
+
+is_shutdown_debug() {
+	grep -qw 'hy300.shutdown_debug=1' /proc/cmdline
+}
+
+reboot_with_shutdown_log() {
+	echo 1 >/sys/module/kernel/parameters/initcall_debug
+	log "$1"
+	sync
+	reboot -f
+}
+
+finish() {
+	is_shutdown_debug && reboot_with_shutdown_log "marco1: fim, reboot -f com initcall_debug (t=$(read_uptime) s)"
+	reboot_now "marco1: fim, sysrq b (t=$(read_uptime) s)"
 }
 
 # O busybox `watchdog` alimenta uma vez ao abrir e depois só a cada hora: na prática o
@@ -153,7 +173,7 @@ main() {
 	write_report
 	log "relatório: fim"
 	sleep_until $((start + REBOOT_AT))
-	reboot_now "marco1: fim, sysrq b (t=$(read_uptime) s)"
+	finish
 	# O sysrq b não volta; se voltar, o reboot de segurança e o watchdog ainda estão de pé.
 	while :; do sleep 60; done
 }

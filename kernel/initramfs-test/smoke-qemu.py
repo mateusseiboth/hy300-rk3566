@@ -7,7 +7,9 @@ kernel com o initramfs e confere:
   - o /init achou a misc pelo nome, apagou só os 2048 bytes do BCB e não tocou no resto;
   - o relatório saiu no log do kernel;
   - o /init tentou armar o watchdog (o virt não tem um, então registra a ausência);
-  - o reset de emergência (sysrq b) aconteceu perto dos 20 s (o QEMU sai com -no-reboot).
+  - o reset de emergência (sysrq b) aconteceu perto dos 20 s (o QEMU sai com -no-reboot);
+  - com hy300.shutdown_debug=1, o /init usa reboot -f com initcall_debug ligado e o kernel
+    registra o shutdown de cada dispositivo antes de reiniciar.
 
 O kernel precisa do config do marco 1 mais o fragmento qemu.config deste diretório
 (PL011 e virtio). O build-marco1.sh faz esse build à parte quando o QEMU está instalado.
@@ -58,9 +60,15 @@ def read_misc(path):
         return f.read(MISC_SECTORS * SECTOR)
 
 
-def run_qemu(image, initramfs, disk):
+SHUTDOWN_DEBUG_EXPECTED = (
+    "hy300: [init] marco1: fim, reboot -f com initcall_debug",
+    "reboot: Restarting system",
+)
+
+
+def run_qemu(image, initramfs, disk, extra=""):
     argv = ["qemu-system-aarch64", "-M", "virt,gic-version=3", "-cpu", "cortex-a55", "-smp", "4",
-            "-m", "1024", "-kernel", image, "-initrd", initramfs, "-append", CMDLINE,
+            "-m", "1024", "-kernel", image, "-initrd", initramfs, "-append", f"{CMDLINE} {extra}".strip(),
             "-drive", f"if=none,file={disk},format=raw,id=d", "-device", "virtio-blk-device,drive=d",
             "-nographic", "-no-reboot"]
     return subprocess.run(argv, capture_output=True, text=True, timeout=TIMEOUT).stdout
@@ -80,6 +88,21 @@ def check(log, before, after):
     return failures
 
 
+def check_shutdown_debug(log):
+    failures = [f"falta no log: {line}" for line in SHUTDOWN_DEBUG_EXPECTED if line not in log]
+    failures += [] if re.search(r": shutdown$", log, re.M) else ["nenhum dispositivo registrou o shutdown"]
+    return failures
+
+
+def run_shutdown_debug(image, initramfs, workdir, factory):
+    disk = os.path.join(workdir, "smoke-disk-shutdown.img")
+    create_disk(disk, build_misc(factory))
+    log = run_qemu(image, initramfs, disk, "hy300.shutdown_debug=1")
+    with open(os.path.join(workdir, "smoke-qemu-shutdown.log"), "w") as f:
+        f.write(log)
+    return check_shutdown_debug(log)
+
+
 def main(image, initramfs, workdir, factory=None):
     os.makedirs(workdir, exist_ok=True)
     disk = os.path.join(workdir, "smoke-disk.img")
@@ -89,6 +112,7 @@ def main(image, initramfs, workdir, factory=None):
     with open(os.path.join(workdir, "smoke-qemu.log"), "w") as f:
         f.write(log)
     failures = check(log, before, read_misc(disk))
+    failures += run_shutdown_debug(image, initramfs, workdir, factory)
     for failure in failures:
         print("FALHOU:", failure)
     print("ok: smoke-qemu" if not failures else f"smoke-qemu: {len(failures)} falha(s), log em {workdir}")

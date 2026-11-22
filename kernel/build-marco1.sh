@@ -24,6 +24,9 @@ CROSS=aarch64-linux-gnu-
 DTB_NAME=rk3566-hy300.dtb
 CONFIGS=(rockchip_linux_defconfig rk3566.config rk3566_hy300.config)
 MARK="hy300.test=marco1 panic=10"
+# Parâmetros extras do teste, depois da marca. console=tty0 por último põe o log do kernel e o
+# do /init na tela (framebuffer); hy300.shutdown_debug=1 troca o fim por reboot -f com log.
+EXTRA_CMDLINE="${EXTRA_CMDLINE-console=tty0}"
 RECOVERY_PART_SIZE=113246208
 
 IMAGE="$KOUT/arch/arm64/boot/Image"
@@ -75,7 +78,7 @@ build_image() {
 	echo ">> recovery-marco1.img"
 	python3 "$REPO/tools/mkboot.py" build --like "$FACTORY/recovery.img" -o "$OUT" \
 		--kernel "$IMAGE" --ramdisk "$INITRAMFS" --second "$WORK/resource-marco1.img" --dtb "$DTB" \
-		--append-cmdline "$MARK" --pad-to-like
+		--append-cmdline "$MARK${EXTRA_CMDLINE:+ $EXTRA_CMDLINE}" --pad-to-like
 }
 
 require_same() {
