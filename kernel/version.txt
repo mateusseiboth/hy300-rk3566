@@ -1,0 +1,1 @@
+Linux version 4.19.232 (txcz@txczhost2) (gcc version 6.3.1 20170404 (Linaro GCC 6.3-2017.05), GNU ld (Linaro_Binutils-2017.05) 2.27.0.20161019) #1107 SMP PREEMPT Thu Jan 18 18:07:36 CST 2024

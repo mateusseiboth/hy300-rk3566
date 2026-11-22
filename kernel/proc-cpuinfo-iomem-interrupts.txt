@@ -1,0 +1,183 @@
+processor	: 0
+model name	: ARMv8 Processor rev 0 (v8l)
+BogoMIPS	: 48.00
+Features	: half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt lpae evtstrm aes pmull sha1 sha2 crc32
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x2
+CPU part	: 0xd05
+CPU revision	: 0
+
+processor	: 1
+model name	: ARMv8 Processor rev 0 (v8l)
+BogoMIPS	: 48.00
+Features	: half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt lpae evtstrm aes pmull sha1 sha2 crc32
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x2
+CPU part	: 0xd05
+CPU revision	: 0
+
+processor	: 2
+model name	: ARMv8 Processor rev 0 (v8l)
+BogoMIPS	: 48.00
+Features	: half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt lpae evtstrm aes pmull sha1 sha2 crc32
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x2
+CPU part	: 0xd05
+CPU revision	: 0
+
+processor	: 3
+model name	: ARMv8 Processor rev 0 (v8l)
+BogoMIPS	: 48.00
+Features	: half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt lpae evtstrm aes pmull sha1 sha2 crc32
+CPU implementer	: 0x41
+CPU architecture: 8
+CPU variant	: 0x2
+CPU part	: 0xd05
+CPU revision	: 0
+
+Hardware	: Rockchip RK3566 BOX DEMO V10 ANDROID Board
+
+00110000-0012ffff : persistent_ram
+00130000-001affff : persistent_ram
+001b0000-001fffff : persistent_ram
+00200000-083fffff : System RAM
+  00280000-01b2ffff : Kernel code
+  01b30000-01f3ffff : reserved
+  01f40000-02250fff : Kernel data
+  08300000-0831efff : reserved
+09400000-5fffffff : System RAM
+  0a200000-0a34efff : reserved
+  10000000-107fffff : reserved
+  5bf00000-5ddfffff : reserved
+  5df00000-5e607fff : reserved
+  5f900000-5fdfffff : reserved
+  5fea0000-5ff07fff : reserved
+  5ff61000-5ff61fff : reserved
+  5ff64000-5ff65fff : reserved
+  5ff66000-5ff68fff : reserved
+  5ff69000-5fffffff : reserved
+fcc00000-fcc07fff : dwc3@fcc00000
+  fcc00000-fcc07fff : dwc3@fcc00000
+fcc0c100-fcffffff : dwc3@fcc00000
+fd000000-fd007fff : dwc3@fd000000
+  fd000000-fd007fff : dwc3@fd000000
+fd00c100-fd3fffff : dwc3@fd000000
+fdcc0000-fdccafff : fdcc0000.sram
+fdd40000-fdd40fff : i2c@fdd40000
+fdd60000-fdd600ff : gpio@fdd60000
+fdd70030-fdd7003f : pwm@fdd70030
+fde00000-fde000ff : pvtm@fde00000
+fde60000-fde63fff : fde60000.gpu
+fde80000-fde800ff : pvtm@fde80000
+fde90000-fde900ff : pvtm@fde90000
+fdea0800-fdea083f : iommu@fdea0800
+fded0480-fded04bf : iommu@fded0480
+fdee0800-fdee083f : iommu@fdee0800
+fdef0800-fdef08ff : iommu@fdef0800
+fdf40f00-fdf40f3f : iommu@fdf40f00
+fdf40f40-fdf40f7f : iommu@fdf40f00
+fdf80800-fdf8083f : iommu@fdf80800
+fdf80840-fdf8087f : iommu@fdf80800
+fdff1a00-fdff1aff : iommu@fdff1a00
+fe010000-fe01ffff : ethernet@fe010000
+fe040000-fe042fff : regs
+fe043e00-fe043eff : iommu@fe043e00
+fe043f00-fe043fff : iommu@fe043e00
+fe044000-fe044fff : gamma_lut
+fe102000-fe1023ff : nocp-cpu@fe102000
+fe102400-fe1027ff : nocp-gpu-vpu-rga-venc@fe102400
+fe102800-fe102bff : nocp-vdec@fe102800
+fe102c00-fe102fff : nocp-vi-usb-peri-pipe@fe102c00
+fe103000-fe1033ff : nocp-vo@fe103000
+fe230000-fe2303ff : dfi@fe230000
+fe2c0000-fe2c3fff : dwmmc@fe2c0000
+fe310000-fe31ffff : sdhci@fe310000
+fe388000-fe389fff : rng@fe388000
+fe38c000-fe38ffff : otp@fe38c000
+fe400000-fe400fff : i2s@fe400000
+fe410000-fe410fff : i2s@fe410000
+fe420000-fe420fff : i2s@fe420000
+fe430000-fe430fff : i2s@fe430000
+fe530000-fe533fff : dmac@fe530000
+  fe530000-fe533fff : dmac@fe530000
+fe550000-fe553fff : dmac@fe550000
+  fe550000-fe553fff : dmac@fe550000
+fe5a0000-fe5a0fff : i2c@fe5a0000
+fe600000-fe6000ff : watchdog@fe600000
+fe650000-fe65001f : serial
+fe710000-fe7100ff : tsadc@fe710000
+fe720000-fe7200ff : saradc@fe720000
+fe740000-fe7400ff : gpio@fe740000
+fe750000-fe7500ff : gpio@fe750000
+fe760000-fe7600ff : gpio@fe760000
+fe770000-fe7700ff : gpio@fe770000
+fe830000-fe8300ff : phy@fe830000
+fe840000-fe8400ff : phy@fe840000
+fe850000-fe85ffff : video-phy@fe850000
+fe860000-fe86ffff : video-phy@fe860000
+fe870000-fe870fff : csi2-dphy-hw@fe870000
+fe8a0000-fe8affff : usb2-phy@fe8a0000
+fe8b0000-fe8bffff : usb2-phy@fe8b0000
+
+           CPU0       CPU1       CPU2       CPU3       
+  5:     358386     267262     179389     178460     GICv3  26 Level     arch_timer
+  6:      18632       8824      12777       3978     GICv3 141 Level     rk_timer
+  7:          0          0          0          0     GICv3 260 Level     arm-pmu
+  8:          0          0          0          0     GICv3 261 Level     arm-pmu
+  9:          0          0          0          0     GICv3 262 Level     arm-pmu
+ 10:          0          0          0          0     GICv3 263 Level     arm-pmu
+ 11:      25118          0          0          0     GICv3  78 Level     fdd40000.i2c
+ 12:          0        508          0          0     GICv3 114 Level     rk_pwm_irq
+ 13:          0          0          0          0     GICv3 118 Level     rk_pwm_pwr_irq
+ 14:      20078          0          0          0     GICv3  71 Level     fde60000.gpu
+ 15:         15          0          0          0     GICv3  73 Level     fde60000.gpu
+ 16:      23492          0          0          0     GICv3  72 Level     fde60000.gpu
+ 17:          0          0          0          0     GICv3 171 Level     fdea0400.vdpu
+ 18:          0          0          0          0     GICv3 170 Level     fdea0800.iommu
+ 19:          0          0          0          0     GICv3 122 Level     rga2
+ 20:          0          0          0          0     GICv3  94 Level     fded0000.jpegd
+ 21:          0          0          0          0     GICv3  93 Level     fded0480.iommu
+ 22:          0          0          0          0     GICv3  96 Level     fdee0000.vepu
+ 23:          0          0          0          0     GICv3  95 Level     fdee0800.iommu
+ 24:          0          0          0          0     GICv3  88 Level     fdef0800.iommu, fdef0000.iep
+ 25:          0          0          0          0     GICv3 172 Level     fdf40000.rkvenc
+ 26:          0          0          0          0     GICv3 173 Level     fdf40f00.iommu
+ 27:          0          0          0          0     GICv3 174 Level     fdf40f00.iommu
+ 28:          0          0          0          0     GICv3 123 Level     fdf80200.rkvdec
+ 29:          0          0          0          0     GICv3 124 Level     fdf80800.iommu
+ 30:          0          0          0          0     GICv3  89 Level     rkisp_hw
+ 31:          0          0          0          0     GICv3  90 Level     rkisp_hw
+ 32:          0          0          0          0     GICv3  92 Level     rkisp_hw
+ 33:          0          0          0          0     GICv3  91 Level     fdff1a00.iommu
+ 36:      13836          0          0          0     GICv3 180 Level     fe043e00.iommu, fe040000.vop
+ 37:          0          0          0          0     GICv3  42 Level     dmc
+ 39:      29328          0          0          0     GICv3 131 Level     dw-mci
+ 41:      79133          0          0          0     GICv3  51 Level     mmc2
+ 46:          0          0          0          0     GICv3  46 Level     fe530000.dmac
+ 47:          0          0          0          0     GICv3  45 Level     fe530000.dmac
+ 48:        225          0          0          0     GICv3  48 Level     fe550000.dmac
+ 49:          0          0          0          0     GICv3  47 Level     fe550000.dmac
+ 50:       4263          0          0          0     GICv3  79 Level     fe5a0000.i2c
+ 52:        813          0          0          0     GICv3 149 Level     ttyS1
+ 53:          1          0          0          0     GICv3 147 Level     rockchip_thermal
+ 54:       3782          0          0          0     GICv3 125 Level     fe720000.saradc
+ 55:          1          0          0          0     GICv3 167 Level     rockchip_usb2phy
+ 56:          0          0          0          0     GICv3 168 Level     rockchip_usb2phy
+ 63:          0          0          0          0     GICv3 150 Level     debug
+ 64:          0          0          0          0     gpio1   0 Level     GPIO Key Home
+ 65:         34          0          0          0     GICv3 201 Level     xhci-hcd:usb1
+ 66:          0          0          0          0     GICv3 202 Level     xhci-hcd:usb3
+ 67:          0          0          0          0     gpio0  21 Level     rk628_csi
+ 68:          0          0          0          0     gpio0  22 Edge      rk628_csi
+ 69:          0          0          0          0     gpio2  16 Edge      bt_default_wake_host_irq
+IPI0:    127314     114921     121041      35141       Rescheduling interrupts
+IPI1:      4257       4656       5482       2822       Function call interrupts
+IPI2:         0          0          0          0       CPU stop interrupts
+IPI3:         0          0          0          0       CPU stop (for crash dump) interrupts
+IPI4:      1701        898       1290        783       Timer broadcast interrupts
+IPI5:     32754      29709      33354      27240       IRQ work interrupts
+IPI6:         0          0          0          0       CPU wake-up interrupts
+Err:          0

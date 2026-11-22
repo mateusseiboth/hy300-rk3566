@@ -1,0 +1,85 @@
+== 8723cs.ko
+license:        GPL
+author:         Realtek Semiconductor Corp.
+description:    Realtek Wireless Lan Driver
+srcversion:     5E986A7841E9A5B88A5E0D0
+depends:        
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+== 8821cs.ko
+license:        GPL
+author:         Realtek Semiconductor Corp.
+description:    Realtek Wireless Lan Driver
+srcversion:     BDEB19F2D06644ACABD83FC
+depends:        
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+== 8822bs.ko
+license:        GPL
+author:         Realtek Semiconductor Corp.
+description:    Realtek Wireless Lan Driver
+srcversion:     57D930592CF0A52533A7A87
+depends:        
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+== aic8800_bsp.ko
+license:        GPL
+author:         Copyright(c) 2015-2020 AICSemi AICSemi
+description:    AIC BSP
+srcversion:     93FBB0182D4353DE2E66FA6
+depends:        
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+== aic8800_btlpm.ko
+license:        GPL
+author:         Copyright(c) 2015-2020 AICSemi AICSemi
+description:    AIC BLUETOOTH
+srcversion:     91A2F379F3929701E37BBED
+depends:        aic8800_bsp
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+== aic8800_fdrv.ko
+license:        GPL
+author:         Copyright(c) 2015-2017 RivieraWaves RivieraWaves S.A.S
+description:    RivieraWaves 11nac driver for Linux cfg80211
+srcversion:     D5A51AD3E9929A906C774E2
+depends:        aic8800_bsp
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+== bcmdhd.ko
+license:        GPL and additional rights
+depends:        
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+== incrementalfs.ko
+license:        GPL v2
+author:         Eugene Zemtsov <ezemtsov@google.com>
+description:    Incremental File System
+depends:        
+vermagic:       4.19.206 SMP preempt mod_unload modversions aarch64
+== mali_kbase.ko
+license:        GPL
+srcversion:     375D1F653CD25B7DB656688
+depends:        
+vermagic:       4.19.161 SMP preempt mod_unload modversions aarch64
+== skw.ko
+license:        GPL v2
+author:         seekwavetech
+srcversion:     B8A1A85F27CF20ABE7CF5B6
+depends:        skw_bootcoms
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+== skw_bootcoms.ko
+license:        GPL
+license:        GPL
+depends:        skw_sdio
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+== skw_sdio.ko
+license:        GPL v2
+depends:        
+vermagic:       4.19.232 SMP preempt mod_unload modversions aarch64
+
+mali_kbase.ko
+bcmdhd.ko
+8821cs.ko
+skw.ko
+8822bs.ko
+8723cs.ko
+skw_sdio.ko
+skw_bootcoms.ko
+aic8800_btlpm.ko
+aic8800_bsp.ko
+aic8800_fdrv.ko
+incrementalfs.ko
