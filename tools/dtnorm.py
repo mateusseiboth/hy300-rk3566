@@ -25,7 +25,7 @@ LIST_PROPS = {
 }
 # propriedades que são phandle(s) puros, sem argumentos
 SINGLE_RE = re.compile(
-    r"^(interrupt-parent|remote-endpoint|phy-handle|memory-region|operating-points-v2|"
+    r"^(interrupt-parent|remote-endpoint|native-mode|phy-handle|memory-region|operating-points-v2|"
     r"cpu-idle-states|next-level-cache|trip|cpu|cpus|pinctrl-\d+|.*-supply|"
     r"rockchip,(grf|pmugrf|cru|pmu|phy-grf|pipe-grf|usbgrf|sram|vo-grf|vop|lvds|dmc)|"
     r"shmem|pm_qos|mmc-pwrseq|snps,(axi|mtl-tx|mtl-rx)-config|"
@@ -43,8 +43,8 @@ def walk(node, path="/"):
         yield from walk(n, (path.rstrip("/") + "/" + n.name))
 
 
-def main(f):
-    d = fdt.parse_dtb(open(f, "rb").read())
+def normalize(data):
+    d = fdt.parse_dtb(data)
     ph = {}                                   # phandle -> path
     nodes = {}
     for path, n in walk(d.root):
@@ -72,7 +72,12 @@ def main(f):
             val = render(p, ph, cells)
             out.append(f"  {p.name} = {val}")
         out.append("}")
-    print("\n".join(out))
+    return "\n".join(out)
+
+
+def main(f):
+    with open(f, "rb") as dtb:
+        print(normalize(dtb.read()))
 
 
 def render(p, ph, cells):
@@ -88,6 +93,9 @@ def render(p, ph, cells):
     w = list(p.data)
     name = p.name
     try:
+        if name == "rockchip,pins" and len(w) % 4 == 0 and all(w[i] in ph for i in range(3, len(w), 4)):
+            # grupos <banco pino função &pcfg>: o 4º valor é o phandle da configuração elétrica
+            return ", ".join(f"<{w[i]:#x} {w[i+1]:#x} {w[i+2]:#x} &{ph[w[i+3]]}>" for i in range(0, len(w), 4))
         if name == "msi-map" and len(w) % 4 == 0 and all(w[i] in ph for i in range(1, len(w), 4)):
             return ", ".join(f"<{w[i]:#x} &{ph[w[i+1]]} {w[i+2]:#x} {w[i+3]:#x}>" for i in range(0, len(w), 4))
         if name == "interrupt-map":   # PCIe: 3 cells addr + 1 cell int + phandle + #interrupt-cells(pai)
