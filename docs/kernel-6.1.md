@@ -136,7 +136,7 @@ O que pode dar diferente:
 
 1. **Kernel não sobe ou trava cedo.** Outro compilador, KASLR, shadow call stack e
    `PREEMPT` completo. O sinal de vida continua: ventoinha ligada = o `setup_arch` rodou;
-   watchdog de 89 s desliga o aparelho se travar (ligar pelo botão, log no pstore).
+   watchdog de 89 s reinicia se travar (antes desligava; ver "Reinício sozinho em panic e travamento").
 2. **Driver novo no boot.** O `rockchip_defconfig` liga coisas que o `rockchip_linux_defconfig`
    não ligava (por exemplo o `rk_system_heap`, binder, ashmem, incfs, netfilter do Android). Um
    panic reinicia em 10 s e fica no `dmesg-ramoops-0`.
@@ -571,11 +571,172 @@ responder, `ping <ip>` e `ip neigh` para ver se o ARP chegou. Para sair do teste
 
 | Falha | Na tela | O que acontece |
 |---|---|---|
-| módulo não carrega / chip não responde | `FALHOU: insmod ... aic8800_fdrv falhou` (e as linhas `aicbsp` antes) | reinicia em 2 min |
+| módulo não carrega / chip não responde | `primeira carga falhou`, o estado do SDIO (`hy300: [sdio]`), `religando o chip`, e `FALHOU: ... (segunda tentativa)` se a segunda também falhar | reinicia em 2 min |
 | sem `wlan0` | `FALHOU: nenhuma interface sem fio em 20 s` | reinicia em 2 min |
 | senha errada, rede fora do alcance, roteador só WPA3 | `FALHOU: sem conexão em 60 s (estado SCANNING/4WAY_HANDSHAKE/...)` | reinicia em 2 min |
 | conectou mas o PC não alcança | linhas de status normais | `ping`, ARP; esperar o prazo de 15 min |
-| kernel trava ou dá panic no driver | log para | panic reinicia em 10 s; travamento sem panic: o watchdog desliga o aparelho em ~60 s (ligar pelo botão, o log fica no pstore) |
+| kernel trava ou dá panic no driver | log para | panic reinicia em 5 s; travamento sem panic: detectores e watchdog reiniciam (base ack, ver "Reinício sozinho em panic e travamento") |
+
+### Falha do Wi-Fi no kernel ACK (22/11)
+
+No BSP (`hy300-6.1`, GCC) o Wi-Fi funcionou; no ACK (`hy300-ack-6.1`, clang) falhou duas vezes.
+Logs em `~/hy300-work/marco1-ack/resultado{,2}/console-ramoops-0.txt`.
+
+- **Boot 1.** O cartão enumerou igual à fábrica (SDR104 a 50 MHz, fase 135) e o chip respondeu,
+  mas cada resposta demorou mais que a anterior: a leitura da revisão levou 0,2 s, os dois
+  blocos do `fw_adid` 1,7 s, os quatro primeiros do `fw_patch` uns 9 s, e o quinto estourou os
+  3 s do `cmd_mgr` (`tkn[7] cmd:1035`, endereço `0x1e1000`). Na fábrica a carga inteira leva
+  40 ms. Depois disso o núcleo MMC deu o cartão por removido (`-123`, `ENOMEDIUM`).
+- **Boot 2.** Falhou no primeiro comando. O `sdio_clock=50000000` desse boot não mudou nada: no
+  D80 o driver só imprime "FEATURE_SDIO_CLOCK 150 MHz", o `set_ios` que aplicaria o valor fica
+  num `#if 0`, e o barramento já roda a 50 MHz pelo `max-frequency` do DT. O parâmetro foi
+  revertido (kernel e `/init`). O chip continuava travado do boot 1: depois de uma falha nem o
+  reboot quente nem o Android de fábrica o recuperam, só tirar da tomada.
+
+O que não difere entre as árvores: `dw_mmc*`, o núcleo SDIO (`sdio_irq.c`, `sdio_io.c`,
+`pwrseq_simple.c`), o nó `dwmmc@fe2c0000` do DT (só o nome) e o código do `aic8800_bsp`
+(o `1e3aa6b` mexe só no `aic8800_fdrv`, em API do cfg80211). Sem LTO e sem CFI nos dois;
+`VMAP_STACK` nos dois e os buffers de DMA do driver são `kmalloc`/`skb`. O que difere: clang 20 no
+lugar do GCC, `PREEMPT` completo, `SHADOW_CALL_STACK`, `ARCH_DMA_MINALIGN` 64 (era 128; a linha
+de cache do A55 é 64), os flags `claimed`/`retune_*` do `struct mmc_host` em campos de bit
+(KABI do ACK) e o estado do chip no início do teste.
+
+Hipóteses, da mais para a menos provável:
+
+1. **A resposta do chip chega e o aviso não** (interrupção SDIO in-band atrasada ou perdida no
+   ACK). Combina com respostas que chegam, mas cada vez mais tarde, até não chegarem. O
+   caminho (dw_mmc → `sdio_irq_work` → tratador do `aic8800_bsp` → `busrx`) é o mesmo código nas
+   duas árvores; a diferença teria de vir de compilador, preempção ou tempo.
+2. **O chip começou o boot 1 num estado ruim** (firmware do Android ainda rodando, o pulso do
+   `WL_REG_ON` no boot não reseta). O boot 2 mostra que um chip travado atravessa o reboot
+   quente; contra: o teste do BSP partiu do mesmo jeito (`reboot-to-test-slot.sh` com o Wi-Fi do
+   Android no ar) e funcionou.
+3. **O chip demora porque recebe dado errado** (cache/DMA no envio). Menos provável: o CRC8 do
+   cabeçalho e a resposta correta da revisão (7, U03) mostram que os comandos chegam inteiros.
+
+O que mudou para o próximo teste:
+
+- `aic8800_bsp` (kernel `f1fdbdc`): a resposta é esperada em fatias de 50 ms e, entre uma e outra,
+  o driver lê o `misc_int_status` do chip; se houver resposta pendente, trata como a interrupção
+  trataria. Log: os 8 primeiros comandos com 20 ms ou mais (`aicbsp: tkn[n] cmd c lento: envio
+  X ms, resposta Y ms (achada por polling)`), um resumo no fim da carga (`aicbsp: N comandos,
+  ... com resposta por polling, maior espera ...` e `aicbsp: interrupções SDIO ...`) e, no
+  estouro, os registradores do chip lidos por CMD52 e o estado do host.
+- `/init`: se a carga falhar, grava o estado do host SDIO (`hy300: [sdio]`: `ios` e `regs` do
+  debugfs do dw_mmc, a linha do `fe2c0000` no `/proc/interrupts`, o `gpio-73` = `WL_REG_ON`),
+  descarrega os módulos, desliga o host SDIO por 2 s (unbind do `dwmmc_rockchip`: o
+  `mmc-pwrseq-simple` põe o `WL_REG_ON` em 0 e corta o 32 kHz), religa, espera o cartão da
+  AICSemi (`vendor 0xc8a1`) e carrega de novo.
+
+Como ler o próximo boot (tirar da tomada antes, para o chip partir do zero):
+
+| No log | Conclusão |
+|---|---|
+| resumo com 0 lentos e `telnet` no ar | o problema era o estado do chip; o polling não foi preciso |
+| comandos lentos "achada por polling" e carga completa | hipótese 1: a interrupção SDIO não chega no ACK (o polling contorna) |
+| lentos sem polling, `envio` alto | o atraso está no envio (controle de fluxo ou `bustx`), não na resposta |
+| estouro com `int_status 0x00` e CMD52 ok | o chip não respondeu: estado do chip (hipótese 2) ou dado errado (3) |
+| estouro com `ret -110`/`-123` no CMD52 | o barramento SDIO morreu |
+| `chip de volta no SDIO` e a segunda carga passa | o `WL_REG_ON` por 2 s destrava o chip sem tirar da tomada |
+
+Imagem: `~/hy300-work/marco1-ack/recovery-wifi-diag.img` (kernel `4b06e02`, `WIFI=1`, com as
+credenciais: não publicar), SHA-256 `ed6749becca5f13e4c456c2e01fbe412aebe31a2bc2a27b61eb2fdeda68321b1`.
+
+## Reinício sozinho em panic e travamento (base ack)
+
+Kernel `a1e01ec`..`4b06e02` do `hy300-ack-6.1`. Objetivo: qualquer panic ou travamento termina
+num reinício normal (o pstore guarda o log e o próximo boot decide o que subir), nunca num
+aparelho desligado.
+
+| Caso | Quem pega | Tempo até reiniciar |
+|---|---|---|
+| panic, oops | `PANIC_ON_OOPS`, `PANIC_TIMEOUT=5` (sem depender da cmdline) | 5 s |
+| CPU presa sem ceder (IRQs ligadas) | softlockup com panic | ~20 s + 5 s |
+| CPU presa com IRQs desligadas | detector "buddy" do ACK (`HARDLOCKUP_DETECTOR_OTHER_CPU`): a CPU vizinha vê o hrtimer parado; panic | ~10 a 20 s + 5 s |
+| tarefa em D por 120 s | hung task com panic (o padrão do ACK era 10 s) | 120 a 240 s + 5 s |
+| todas as CPUs presas | watchdog do SoC: 1º estouro = pré-timeout (IRQ, panic), 2º = reset de hardware | até 2 TOPs |
+
+- **Watchdog.** O núcleo do watchdog agora alimenta o dw-wdt armado cedo (`HY300_EARLY_BEACON`,
+  89 s) até alguém abrir o `/dev/watchdog`; antes ninguém alimentava e um sistema sem daemon
+  reiniciaria aos 89 s. O dw-wdt sobe no modo de pré-timeout (`DW_WATCHDOG_PRETIMEOUT_DEFAULT`,
+  governador `panic`): o primeiro estouro vira panic e reinício normal com log; o segundo é o
+  reset de hardware. O mesmo commit corrige o intervalo do ping do núcleo no modo de
+  interrupção, que caía em cima do pré-timeout.
+- **Reset do watchdog desligava o aparelho.** O dw-wdt usa o reset global escolhido no
+  `CRU_GLB_RST_CON` (`0xfdd20000 + 0xdc`); no valor de reset (bit 1 = 0) é o "second global
+  reset", e é ele que deixa o HY300 desligado. O reinício normal usa o "first global reset"
+  (`CRU_GLB_SRST_FST`). `HY300_WDT_REBOOT` liga o bit 1 num `early_initcall` e escreve no log
+  `hy300: watchdog com first global reset (CRU_GLB_RST_CON 0x... -> 0x...)`. O layout do
+  registrador é o do RK3368/PX30 no U-Boot (bit 0 TSADC, bit 1 WDT); para o RK3568 ainda é
+  hipótese até o teste do watchdog no aparelho. O TSADC fica como está.
+- **Pseudo-NMI.** `ARM64_PSEUDO_NMI` vem compilado, mas não é padrão (a cmdline teria de ter
+  `irqchip.gicv3_pseudo_nmi=1`): mexe na máscara de prioridades do GIC em toda interrupção e
+  não foi testado com o TF-A de fábrica. O detector por perf/NMI do arm64 só existe a partir do
+  6.4; o "buddy" do ACK não precisa de NMI, e o `PSCI SYSTEM_RESET` reinicia mesmo com uma CPU
+  presa.
+- **LKDTM** (`CONFIG_LKDTM=y`) para provocar cada caso pelo debugfs.
+
+Teste no aparelho (como root, pelo telnet do modo Wi-Fi ou no Alpine). Cada linha é um boot;
+em todos o esperado é voltar sozinho ao boot seguinte (no fluxo de teste, o Android de fábrica)
+sem apertar o botão, e o log do panic aparecer no `console-ramoops-0`:
+
+```sh
+dmesg | grep 'first global reset'                       # bit do CRU_GLB_RST_CON
+echo c > /proc/sysrq-trigger                              # panic: reinicia em ~5 s
+echo HARDLOCKUP > /sys/kernel/debug/provoke-crash/DIRECT  # uma CPU presa sem IRQ: ~15 a 25 s
+echo SOFTLOCKUP > /sys/kernel/debug/provoke-crash/DIRECT  # ~25 s
+# todas as CPUs presas: só o watchdog do SoC sobra (pré-timeout não roda, vale o reset de
+# hardware). Com o /init de teste (watchdog -T 60) leva até ~90 s. Se desligar em vez de
+# reiniciar, o bit do CRU_GLB_RST_CON não é o certo.
+for c in 0 1 2 3; do taskset -c $c sh -c 'echo HARDLOCKUP > /sys/kernel/debug/provoke-crash/DIRECT' & done
+# pré-timeout sozinho: parar quem alimenta o watchdog (o /init de teste usa o applet watchdog)
+kill -STOP $(pidof watchdog)                              # panic "watchdog pretimeout event" em ~45 s
+```
+
+## DVFS (base ack)
+
+Kernel `875bf75` e `b9b6b61`. Até aqui a CPU ficava fixa em 1104 MHz, a DDR no que o loader
+deixou e a GPU no clock do SCMI.
+
+| Bloco | Driver | Faixa | Governador padrão (outros) |
+|---|---|---|---|
+| CPU (4x A55) | `rockchip-cpufreq` sobre o `cpufreq-dt`, `vdd_cpu` PWM | 408 MHz a 1,8 GHz (o máximo da fábrica) | schedutil (performance, ...) |
+| DDR | `rockchip_dmc` + TF-A de fábrica (V1.02) | 780 MHz normal, 528 MHz no reboot, como na fábrica | `dmc_ondemand` da Rockchip (performance) |
+| GPU | devfreq do Panfrost | 200 a 700 MHz, `vdd_fixed` 1,0 V fixo | simple_ondemand (performance) |
+
+- **Tensões da CPU.** Tabela do BSP, escolhida pelo PVTM do OTP. Este chip (pvtm 89400, o que a
+  fábrica também mede) cai na faixa L2 do BSP e na L1 da fábrica; o BSP dá 25 mV a mais em cada
+  frequência (1,075 V contra 1,05 V em 1,8 GHz). Teto da tabela 1,15 V, do regulador 1,2 V.
+- **GPU.** A tabela de OPP voltou ao nó, sem o `opp-supported-hw` (o núcleo de OPP descarta
+  toda OPP com ele quando ninguém informa o hardware, e o Panfrost não informa). Os 800 MHz da
+  fábrica ficam de fora, como no `rk3566-box.dtsi`.
+- **Throttling.** `soc-thermal`: passivo em 75 e 85 °C (power allocator sobre CPU e GPU),
+  crítico em 115 °C (desliga). Antes não havia quem resfriar.
+- Barramentos (`ARM_ROCKCHIP_BUS_DEVFREQ`) e NPU continuam desligados.
+
+Como conferir no aparelho:
+
+```sh
+cd /sys/devices/system/cpu/cpu0/cpufreq
+cat scaling_available_frequencies scaling_available_governors scaling_governor
+echo performance > scaling_governor; cat scaling_cur_freq cpuinfo_cur_freq   # 1800000
+grep vdd_cpu /sys/kernel/debug/regulator/regulator_summary                    # ~1075 mV
+dmesg | grep -e 'cpu cpu0' -e rockchip-dmc                                     # pvtm-volt-sel, rates
+cat /sys/class/devfreq/dmc/cur_freq /sys/class/devfreq/dmc/available_governors
+# carga nos 4 núcleos e temperatura a cada 5 s; acima de 85 °C o scaling_cur_freq tem de cair
+for i in 1 2 3 4; do (while :; do :; done) & done
+while :; do echo "$(cat /sys/class/thermal/thermal_zone0/temp) $(cat scaling_cur_freq)"; sleep 5; done
+kill $(jobs -p)                                                                # fim da carga
+# GPU (precisa do panfrost.ko: Alpine/Lineage; o initramfs de teste não o tem)
+modprobe panfrost; cat /sys/class/devfreq/fde60000.gpu/available_frequencies
+```
+
+Imagem com tudo (Wi-Fi com diagnóstico, reinício em travamento e DVFS):
+`~/hy300-work/marco1-ack-dvfs/recovery-marco1.img` (kernel `b9b6b61`, `WIFI=1`, com as
+credenciais: não publicar), SHA-256 `edf6c8e0b5d4654c4328a739a2f33812791a58bcbf8cc43c059368c4f021caff`.
+O smoke do QEMU passa nos três modos, mas o virt não tem nada disso: o DVFS só se prova no
+aparelho. Para o teste do Wi-Fi, a imagem sem DVFS (`recovery-wifi-diag.img`) isola uma
+variável.
 
 ## Pendências por driver
 
@@ -585,8 +746,8 @@ responder, `ping <ip>` e `ip neigh` para ver se o ARP chegou. Para sair do teste
 | RK628 (entrada HDMI) | `VIDEO_RK628_CSI` (`drivers/media/i2c/rk628`) e `drivers/misc/rk628`, ligados no config | o nó está portado e desligado. Ligar depois que o display funcionar e conferir o caminho `csi2-dphy0` → `rkisp` |
 | Motor de foco | nada. Na fábrica o nó `rk_motor` (`usb-cam-gpio`) não tem propriedades: o driver fechado da TXCZ fixa os GPIOs no código | escrever o driver a partir de `reverse-engineering/libfocus/README.md`, mantendo `/sys/class/motor_cc` |
 | QMI8658 | sem driver. O chip nem está montado: no dmesg de fábrica o QMI8658 lê devid 0, e quem responde é o SC7A20 em `0x19` (id `0x11`) | conferir no relatório se o `gsensor` do SC7A20 aparece em `entrada` |
-| Mali G52 | `MALI_BIFROST` no BSP | ligar com devfreq depois do primeiro boot |
-| DVFS de CPU, DDR e barramentos | drivers no BSP | ligar um por vez; o DMC depende do TF-A de fábrica |
+| Mali G52 | Panfrost (módulo) com devfreq | testar o devfreq e o throttling no aparelho |
+| DVFS de CPU, DDR e barramentos | CPU, DDR e GPU ligados na base ack ("DVFS") | testar no aparelho; barramentos continuam desligados |
 | NPU | `ROCKCHIP_RKNPU` | desligada também na fábrica |
 
 ## Como entrar na recovery sem tocar na misc
