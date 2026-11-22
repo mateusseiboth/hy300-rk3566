@@ -6,7 +6,7 @@
 |---|---|
 | Motor de foco | driver de kernel embutido (`usb-cam-gpio` / `rk_motor`), nó `/sys/class/motor_cc/motor_cc/motor` |
 | Foco manual pelo controle | tratado **dentro do kernel** pelo driver do controle IR (`rk pwm remotectl`), que usa `motor_status` |
-| Foco manual pelo userspace | escrever `user_cw` / `user_ccw` (1 passo) e `stop` em `.../motor`; o fim de curso aparece em `.../hd_camera_on` |
+| Foco manual pelo userspace | escrever `user_cw` / `user_ccw` (10 passos) e `aastop` em `.../motor`, **sem `\n`** (`printf`, não `echo`); o fim de curso aparece em `.../hd_camera_on` |
 | Autofoco (câmera) | `libfocusvahysd.so` é a lib JNI do app `com.hysd.txczscreen`, **que não existe no ROM**. Nada carrega a lib. |
 | "Autofoco" do TxczSetting | só aciona o app ausente (ver `../txcz-settings/README.md` §5) |
 
@@ -28,13 +28,17 @@ sysfs (`/sys/devices/virtual/motor_cc/motor_cc/`):
 | `motor` | `0777 system:system` (feito pelo `init.rk356x.rc` em `sys.boot_completed=1`) | escrita = comando; leitura = `0` |
 | `hd_camera_on` | `0644 root` | leitura `0`/`1`. O txczbox usa como "fim de curso atingido" (`"1"`) |
 
-Comandos aceitos por `motor_store` (strings do kernel em `boot.img`; parser exato não desmontado):
+Comandos aceitos por `motor_store` (desmontado em `boot.img`, `0x7359b0`). Ele compara o buffer **inteiro** com `strcmp`, então
+`echo cmd >` (que manda `cmd\n`) não faz nada; use `printf`:
 ```
-user_cw   user_ccw            # 1 passo em cada sentido (uso confirmado no app txczbox)
-stop                          # parar (uso confirmado no txczbox e no framework)
-aacw  aaccw  aastop           # variantes com prefixo "aa" (logs "in ir_camera_on_store =cw/ccw/stop")
+user_cw   user_ccw            # 10 passos síncronos em cada sentido
+aacw  aaccw                   # movimento contínuo
+aastop                        # parar ("stop" sem prefixo NÃO existe)
 aacw_end  aaccw_end           # ir até o fim de curso
 ```
+Depois de tratar o comando, a função tenta `kstrtoint` no buffer e devolve **-EINVAL para qualquer string não numérica**: a escrita
+"falha" (`write: Invalid argument`) mesmo quando o motor anda. É esperado; quem escreve deve ignorar o erro.
+
 O driver do controle (`rk pwm remotectl v2.0`) loga `hason rc timer/getdata/seq motor_status=%d`. Isso indica que as teclas de foco
 do controle IR acionam o motor direto no kernel, sem passar pelo Android: nenhuma tecla de foco aparece no
 `fdd70030_pwm.kl`.
@@ -47,23 +51,22 @@ do controle IR acionam o motor direto no kernel, sem passar pelo Android: nenhum
   - `motorCwOne()` → escreve `user_cw`; `motorCcwOne()` → `user_ccw`;
   - `motorCwUntil()/motorCcwUntil()`: thread que repete o passo **a cada 60 ms** enquanto o estado não mudar,
     lendo `hd_camera_on` (`"1"` = chegou no limite);
-  - `motorStop()` → escreve `stop`.
+  - `motorStop()` → escreve `stop`, que o kernel não reconhece (o motor para só porque `user_cw` é síncrono).
 - **`services.jar` `MaDaDialog`** (teclas KEYCODE 137/138 = F7/F8): mostra um diálogo e, a cada 60 ms, escreve `cw`/`ccw`
-  em `sys/class/motor_cc/motor_cc/motoraa`. Ao soltar a tecla escreve `stop`. **Esse nó não existe neste kernel**
+  em `sys/class/motor_cc/motor_cc/motoraa`. Ao soltar a tecla escreve `stop` (comando inexistente). **Esse nó não existe neste kernel**
   (só existe `motor`), então esse caminho não funciona no HY300. F7/F8 também não estão no layout do controle IR.
 
-### Reproduzir pela shell (NÃO executado)
+### Reproduzir pela shell (executado pelo app hy300-settings; movimento visual a confirmar)
 
 ```sh
 M=/sys/class/motor_cc/motor_cc
-echo user_cw  > $M/motor      # 1 passo (repita a cada ~60 ms para girar continuamente)
-echo user_ccw > $M/motor
-echo stop     > $M/motor
+printf user_cw  > $M/motor    # 10 passos ("Invalid argument" é esperado)
+printf user_ccw > $M/motor
+printf aastop   > $M/motor
 cat $M/hd_camera_on           # 1 = fim de curso
 ```
-Para o app novo: rodar um loop de 60 ms enquanto o botão estiver pressionado e parar quando `hd_camera_on == 1`.
-Como `motor` é 0777, um app comum consegue escrever, se o SELinux permitir (`sysfs` genérico: provavelmente
-não permite para `untrusted_app`; um app `platform`/uid system consegue).
+Para o app: repetir o passo a cada 60 ms enquanto o botão estiver pressionado e parar quando `hd_camera_on == 1`.
+`motor` é 0777 e o SELinux está em permissive, então um app comum (`untrusted_app`) consegue escrever (verificado pelo app hy300-settings).
 
 ## 2. `libfocusvahysd.so`
 
@@ -98,5 +101,3 @@ Conclusão: implementar autofoco por câmera exigiria o app hysd (proprietário,
 (V4L2 na câmera USB + varredura do motor maximizando o contraste). O HY300 tem a câmera USB? `/dev/video0..8`
 existem, mas parte é do RK628 (HDMI-in) e do ISP. `hd_camera_on` sugere que dá para ligar uma câmera "HD", mas
 isso ficou em aberto.
-
-> **Correção (app hy300-settings):** o `motor_store` compara o comando inteiro com `strcmp`. `echo` (com `\n`) não funciona; use `printf`. Comandos válidos: `user_cw`/`user_ccw` (10 passos), `aacw`/`aaccw`, `aastop`, `*_end`. Não existe `stop`. A escrita sempre retorna EINVAL mesmo funcionando.
