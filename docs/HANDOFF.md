@@ -122,4 +122,4 @@ Commitado (o README do app tem a tabela de estado com [testado]/[não testado] e
 - `bootlog` nativo em C++ (log desde ~6 s, boot mais rápido): ver o TODO em `android/bootlog/README.md`.
 - Áudio do HDMI-in: falta o serviço `com.rockchip.rkhdmiinaudio` (`docs/hdmi-audio.md`).
 - Renderização nativa 1024×600: investigar `persist.vendor.resolution.*` no HWC.
-- Bloquear domínios de telemetria no hosts (`reverse-engineering/telemetria/README.md`).
+- Telemetria bloqueada em 22/11 (`scripts/block-telemetry.sh`, reverter com `unblock-telemetry.sh`): hosts + iptables para o IP fixo. Conferir no próximo boot se o `.rc` reaplica a regra (`iptables -S OUTPUT | grep 47.113`).
