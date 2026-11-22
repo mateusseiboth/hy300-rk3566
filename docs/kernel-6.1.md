@@ -5,7 +5,9 @@ normal continua pela `boot`, com o Android de fábrica. O kernel de teste sobe u
 mínimo que apaga o `boot-recovery` da `misc`, escreve um relatório no log e reinicia sozinho
 em cerca de 20 s. O log é lido depois, já no Android, em `/sys/fs/pstore/console-ramoops-0`.
 
-Estado em 22/11/2026: imagem montada e testada no QEMU. Ainda não foi gravada no aparelho.
+Estado em 22/11/2026: **passou no aparelho** (quinto boot). O 6.1 sobe com o próprio DT,
+acha o eMMC e a `misc`, escreve o relatório no pstore e reinicia pelo sysrq `b` aos 20 s. O
+Android de fábrica volta sozinho, com Wi-Fi. Ver "Resultado no aparelho".
 
 | Item | Onde |
 |---|---|
@@ -112,15 +114,63 @@ fábrica.
 
 ## Onde o U-Boot pega o DTB
 
-O U-Boot de fábrica (`2017.09-gf21494d #txcz`) conhece as duas fontes: o resource.img
-("resource.img: dtb, u-boot logo, kernel logo", arquivo `rk-kernel.dtb`) e a seção dtb do
-header v2. Na `recovery.img` de fábrica as duas têm o mesmo DTB, byte a byte (SHA-256
-`1176c89c…`). A imagem de teste troca os dois.
+O U-Boot de fábrica (`2017.09-gf21494d #txcz`) lê o `rk-kernel.dtb` do resource.img (seção
+second) da partição que vai bootar, **passa a usá-lo como DT próprio** (eMMC, display, logo) e o
+entrega ao kernel. A seção dtb do header v2 não é usada para isso.
 
-A recovery também tem uma `recovery_dtbo` de 623 bytes. O U-Boot aplica esse overlay por cima
-do DTB: ele mexe em `/chosen` (`bootargs_ext`) e nos modos de reboot, pelos rótulos `chosen` e
-`reboot_mode`. O DTB novo tem os dois rótulos, e o `fdtoverlay` aplica o overlay sem erro. Se o
-overlay falhasse, o U-Boot poderia seguir com um DTB pela metade.
+Ele não funciona com o DT do 6.1: trava antes do logo, com o LED azul fixo e o botão de energia
+sem resposta, e só volta tirando da tomada. Uma causa certa é o eMMC: este U-Boot só reconhece
+o controlador por `snps,dwcmshc-sdhci` (ou `rockchip,rk3588-dwcmshc`), e o 6.1 usa
+`rockchip,rk3568-dwcmshc`, `rockchip,dwcmshc-sdhci`. Corrigido isso, ainda travou; o resto não
+foi isolado.
+
+Solução adotada: o resource leva o **DT de fábrica** (o U-Boot segue como sempre, com logo) e o
+kernel usa o **DT embutido** (`CONFIG_HY300_BUILTIN_DTB`,
+`drivers/soc/rockchip/hy300-builtin-dtb.c`). No começo do `setup_machine_fdt` ele copia do DT
+do U-Boot o `/chosen` inteiro, os nós `device_type = "memory"` (já sem as áreas do TF-A e do
+OP-TEE) e as entradas `/memreserve/`. Se algo falhar, segue com o DT do bootloader e registra
+`hy300: DT embutido falhou`. O log mostra `hy300: usando o DT embutido` e o modelo
+`HY300 Projector (RK3566, TXCZ y356tx)`. O `build-marco1.sh` confere as duas coisas: resource
+de fábrica e Image com o DT do HY300.
+
+Perde-se o que o U-Boot só ajusta no DT dele, como o endereço do logo em `drm-logo` (a tela
+apaga entre o logo e o kernel). Mantido o compatible `snps,dwcmshc-sdhci` no eMMC do DT, para
+o dia em que o U-Boot receber o DT do 6.1.
+
+A recovery também tem uma `recovery_dtbo` de 623 bytes, que o U-Boot aplica no DT de fábrica:
+`bootargs_ext` no `/chosen` e os modos de reboot. Inofensiva.
+
+## Resultado no aparelho (22/11/2026)
+
+| Boot | Imagem | O que aconteceu |
+|---|---|---|
+| marco 0 | recovery de fábrica + marca | caminho validado: registrador → recovery → reboot pelo menu → marca no pstore |
+| 1 | 6.1 com DT no resource | sem logo, ventoinha parada, preso; tirado da tomada, sem log |
+| 2 | + watchdog no `/init`, sysrq `b` | igual ao 1 |
+| 3 | + ventoinha e watchdog no `setup_arch` | ventoinha não ligou: o kernel nem começou. Problema no U-Boot |
+| 4 | resource de fábrica, DT do 6.1 só na seção dtb | ventoinha ligou; o 6.1 subiu com o DT de fábrica até o `/init` (eMMC falha com aquele DT) e travou; o watchdog **desligou** o aparelho (voltou pelo botão, com o log no pstore) |
+| 5 | resource de fábrica + DT embutido | **passou**: relatório completo, reboot quente aos 20 s, Android e Wi-Fi de volta |
+
+Relatório do boot 5 (log em `~/hy300-work/marco1/resultado5/`, fora do repo; tem o serial na
+cmdline):
+- eMMC em HS200 a 150 MHz, `misc` em `mmcblk2p4`; SDIO do Wi-Fi detectado (`mmc1:390b`);
+- DRM com `card0-LVDS-1` (sem cliente, fica desligado), backlight em 200;
+- controle IR (`fdd70030.pwm`), teclas do painel (`adc-keys`), `gpio-keys` e o receptor 2.4G USB;
+- LEDs `green`, `red`, `Fan_h`, `Lcd_power`; temperatura do SoC 72 °C;
+- reguladores com as tensões de fábrica; só o `mtd_vendor_storage` fica adiado;
+- 1,45 GB de RAM livre para o kernel.
+
+Lições:
+- **Sinal de vida sem serial:** `CONFIG_HY300_EARLY_BEACON` liga a ventoinha e arma o watchdog
+  (~89 s) no começo do `setup_arch`. A ventoinha para no reset e só volta quando um kernel a
+  liga, então "ventoinha parada" = o kernel não começou.
+- **O reset do watchdog desliga o aparelho** em vez de reiniciar (volta pelo botão de energia).
+  A RAM sobrevive: o pstore estava lá.
+- **O `reboot -f` do 6.1 trava** depois do shutdown dos drivers (o `gpio-leds` apaga a
+  ventoinha). O `/init` usa o sysrq `b`, que pula o shutdown; o `Fan_h` tem
+  `retain-state-shutdown`. Investigar o shutdown antes do Android.
+- **Wi-Fi:** depois do reboot pelo sysrq `b` o AIC8800 voltou sozinho. Nos reboots normais do
+  Android de fábrica ele costuma não voltar (é preciso desligar e ligar o Wi-Fi).
 
 ## O que foi portado
 
