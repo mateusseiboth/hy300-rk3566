@@ -1,0 +1,26 @@
+# Imagens de partição / backups (pesados, específicos do aparelho)
+*.img
+*.img.gz
+*.bin
+!dumps/rk628-edid.bin
+backup/
+hy300-backup/
+
+# Binários proprietários extraídos (não redistribuir)
+*.apk
+*.vdex
+*.odex
+*.oat
+*.art
+*.jar
+*.so
+extracted/
+
+# Saídas de decompilação brutas (commitar só notas/trechos relevantes)
+**/jadx-out/
+**/apktool-out/
+
+# Build
+out/
+*.o
+*.ko
