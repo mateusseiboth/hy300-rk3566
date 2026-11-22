@@ -28,9 +28,9 @@ Tela física: **1280×720**. Os comandos abaixo **não foram executados**. Preci
 
 | Função | Mecanismo | Consumidor | Comando |
 |---|---|---|---|
-| Foco manual + | escrever `user_cw` em `/sys/class/motor_cc/motor_cc/motor` (1 passo; repetir a cada 60 ms) | driver de kernel `usb-cam-gpio` | `echo user_cw > /sys/class/motor_cc/motor_cc/motor` |
-| Foco manual − | `user_ccw` | idem | `echo user_ccw > /sys/class/motor_cc/motor_cc/motor` |
-| Parar | `stop` | idem | `echo stop > /sys/class/motor_cc/motor_cc/motor` |
+| Foco manual + | escrever `user_cw` em `/sys/class/motor_cc/motor_cc/motor` (1 passo; repetir a cada 60 ms) | driver de kernel `usb-cam-gpio` | `printf user_cw > /sys/class/motor_cc/motor_cc/motor` |
+| Foco manual − | `user_ccw` | idem | `printf user_ccw > /sys/class/motor_cc/motor_cc/motor` |
+| Parar | `aastop` (sem `\n`; o kernel usa strcmp — usar `printf`) | idem | `printf aastop > /sys/class/motor_cc/motor_cc/motor` |
 | Fim de curso | ler `/sys/class/motor_cc/motor_cc/hd_camera_on` (`1` = limite) | — | `cat /sys/class/motor_cc/motor_cc/hd_camera_on` |
 | Foco pelo controle IR | tratado no kernel (`rk pwm remotectl` usa `motor_status`) | kernel | — |
 | Teclas F7/F8 (framework) | `MaDaDialog` escreve em `.../motoraa` (inexistente) → **não funciona** | — | — |

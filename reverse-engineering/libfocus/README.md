@@ -98,3 +98,5 @@ Conclusão: implementar autofoco por câmera exigiria o app hysd (proprietário,
 (V4L2 na câmera USB + varredura do motor maximizando o contraste). O HY300 tem a câmera USB? `/dev/video0..8`
 existem, mas parte é do RK628 (HDMI-in) e do ISP. `hd_camera_on` sugere que dá para ligar uma câmera "HD", mas
 isso ficou em aberto.
+
+> **Correção (app hy300-settings):** o `motor_store` compara o comando inteiro com `strcmp`. `echo` (com `\n`) não funciona; use `printf`. Comandos válidos: `user_cw`/`user_ccw` (10 passos), `aacw`/`aaccw`, `aastop`, `*_end`. Não existe `stop`. A escrita sempre retorna EINVAL mesmo funcionando.
