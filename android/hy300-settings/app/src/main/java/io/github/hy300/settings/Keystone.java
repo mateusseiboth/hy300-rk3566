@@ -133,50 +133,56 @@ public final class Keystone {
     }
 
     /**
-     * Trapézio vertical: valor positivo estreita a borda de cima, negativo a de baixo.
-     * Cada unidade move os dois cantos da borda 1 px para dentro em x e 9/16 px em y
-     * (mantém a proporção). Aplica o delta em relação ao contador atual.
+     * Trapézio vertical (contador {@code persist.txcz.trapezoid.offsetx}, mesma regra do TXCZ):
+     * positivo estreita a borda de cima, negativo a de baixo. Cada unidade move os dois cantos
+     * da borda 1 px para dentro em x e 1 px em y. Aplica o delta em relação ao contador atual,
+     * então um contador deixado pelo app TXCZ é desfeito corretamente.
      */
     public void setTrapV(int v) {
         int lim = zoomW() / 3;
         v = Math.max(-lim, Math.min(lim, v));
-        applyTrapEdge(trapV, v, true);
+        applyTrapEdge(trapV, v, VERTICAL_EDGES);
         trapV = v;
     }
 
-    /** Trapézio horizontal: positivo estreita a borda esquerda, negativo a direita. */
+    /**
+     * Trapézio horizontal ({@code persist.txcz.trapezoid.offsety}): positivo estreita a borda
+     * direita, negativo a esquerda. Mesma regra de 1 px em x e 1 px em y por unidade.
+     */
     public void setTrapH(int v) {
         int lim = zoomH() / 3;
         v = Math.max(-lim, Math.min(lim, v));
-        applyTrapEdge(trapH, v, false);
+        applyTrapEdge(trapH, v, HORIZONTAL_EDGES);
         trapH = v;
     }
 
-    private void applyTrapEdge(int oldV, int newV, boolean vertical) {
+    /** Cantos da borda estreitada: [0] para contador positivo, [1] para negativo. */
+    private static final int[][] VERTICAL_EDGES = {{LT, RT}, {LB, RB}};
+    private static final int[][] HORIZONTAL_EDGES = {{RT, RB}, {LT, LB}};
+
+    private void applyTrapEdge(int oldV, int newV, int[][] edges) {
         // remove a contribuição antiga e aplica a nova
-        trapContribution(oldV, vertical, -1);
-        trapContribution(newV, vertical, +1);
+        trapContribution(oldV, edges, -1);
+        trapContribution(newV, edges, +1);
         clamp();
     }
 
-    private void trapContribution(int v, boolean vertical, int sign) {
+    private void trapContribution(int v, int[][] edges, int sign) {
         if (v == 0) return;
         int a = Math.abs(v);
-        if (vertical) {
-            int ay = Math.round(a * 9f / 16f);
-            int[] cs = v > 0 ? new int[]{LT, RT} : new int[]{LB, RB};
-            for (int c : cs) {
-                user[c][0] += sign * a * inX(c);
-                user[c][1] += sign * ay * inY(c);
-            }
-        } else {
-            int ax = Math.round(a * 16f / 9f);
-            int[] cs = v > 0 ? new int[]{LT, LB} : new int[]{RT, RB};
-            for (int c : cs) {
-                user[c][0] += sign * ax * inX(c);
-                user[c][1] += sign * a * inY(c);
-            }
+        for (int c : edges[v > 0 ? 0 : 1]) {
+            user[c][0] += sign * a * inX(c);
+            user[c][1] += sign * a * inY(c);
         }
+    }
+
+    /**
+     * Setas na tela do trapézio, como no TXCZ: cima/baixo somam/subtraem no vertical,
+     * direita/esquerda no horizontal.
+     */
+    public void nudgeTrapezoid(int dx, int dy, int step) {
+        if (dy != 0) setTrapV(trapV + dy * step);
+        if (dx != 0) setTrapH(trapH + dx * step);
     }
 
     public void setZoom(int z) {

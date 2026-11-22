@@ -83,15 +83,60 @@ public class KeystoneTest {
     public void trapezoidIsReversible() {
         Keystone k = Keystone.fromProps(props(2, 100, "1280,-720", "1280,720", "-1280,-720", "-1280,720"));
         k.setTrapV(10);
-        assertArrayEquals(new int[]{1270, -714}, k.corner(Keystone.LT));
-        assertArrayEquals(new int[]{-1270, -714}, k.corner(Keystone.RT));
+        assertArrayEquals(new int[]{1270, -710}, k.corner(Keystone.LT));
+        assertArrayEquals(new int[]{-1270, -710}, k.corner(Keystone.RT));
         k.setTrapV(-10);
         assertArrayEquals(new int[]{1280, -720}, k.corner(Keystone.LT));
-        assertArrayEquals(new int[]{1270, 714}, k.corner(Keystone.LB));
+        assertArrayEquals(new int[]{1270, 710}, k.corner(Keystone.LB));
         k.setTrapV(0);
         k.setTrapH(5);
         k.setTrapH(0);
         for (int c = 0; c < 4; c++) assertArrayEquals(new int[]{0, 0}, k.user[c]);
+    }
+
+    /**
+     * Mesma regra do ProjectorVerticalActivity do TXCZ (bytecode): offsetx é o trapézio vertical
+     * (positivo estreita o topo), offsety é o horizontal (positivo estreita a direita), e cada
+     * unidade move os dois cantos 1 px em x e 1 px em y.
+     */
+    @Test
+    public void trapezoidFollowsTxczCounters() {
+        Keystone k = Keystone.fromProps(props(0, 100, "0,0", "0,0", "0,0", "0,0"));
+        k.setTrapV(5);
+        assertArrayEquals(new int[]{5, -5}, k.corner(Keystone.LT));
+        assertArrayEquals(new int[]{-5, -5}, k.corner(Keystone.RT));
+        k.setTrapV(0);
+        k.setTrapH(5);
+        assertArrayEquals(new int[]{-5, -5}, k.corner(Keystone.RT));
+        assertArrayEquals(new int[]{-5, 5}, k.corner(Keystone.RB));
+        assertArrayEquals(new int[]{0, 0}, k.corner(Keystone.LT));
+        k.setTrapH(-5);
+        assertArrayEquals(new int[]{5, -5}, k.corner(Keystone.LT));
+        assertArrayEquals(new int[]{5, 5}, k.corner(Keystone.LB));
+        assertArrayEquals(new int[]{0, 0}, k.corner(Keystone.RT));
+    }
+
+    @Test
+    public void trapezoidLeftByTxczIsUndone() {
+        Map<String, String> p = props(0, 100, "5,-5", "0,0", "-5,-5", "0,0");
+        p.put(Keystone.P_TRAP_X, "5");
+        Keystone k = Keystone.fromProps(p);
+        k.setTrapV(0);
+        for (int c = 0; c < 4; c++) assertArrayEquals(new int[]{0, 0}, k.corner(c));
+    }
+
+    @Test
+    public void arrowsMoveTrapezoidLikeTxcz() {
+        Keystone k = Keystone.fromProps(props(0, 100, "0,0", "0,0", "0,0", "0,0"));
+        k.nudgeTrapezoid(0, 1, 5);   // cima
+        assertEquals(5, k.trapV);
+        k.nudgeTrapezoid(0, -1, 5);  // baixo
+        assertEquals(0, k.trapV);
+        k.nudgeTrapezoid(1, 0, 5);   // direita estreita a borda direita
+        assertEquals(5, k.trapH);
+        assertArrayEquals(new int[]{-5, -5}, k.corner(Keystone.RT));
+        k.nudgeTrapezoid(-1, 0, 20); // esquerda
+        assertEquals(-15, k.trapH);
     }
 
     @Test

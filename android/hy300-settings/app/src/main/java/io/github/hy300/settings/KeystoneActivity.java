@@ -162,8 +162,7 @@ public class KeystoneActivity extends Activity {
                 break;
             case PAGE_TRAPEZOID:
                 // ↑ estreita o topo, ↓ estreita a base; ← estreita a esquerda, → a direita
-                if (dy != 0) ks.setTrapV(ks.trapV + dy * s);
-                if (dx != 0) ks.setTrapH(ks.trapH - dx * s);
+                ks.nudgeTrapezoid(dx, dy, s);
                 break;
             case PAGE_ZOOM:
                 int zs = s == 1 ? 1 : 5;
