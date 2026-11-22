@@ -33,13 +33,15 @@ Device tree: ver [`../device-tree/`](../device-tree/) (`*-live.dts` = DT após f
 
 ## Kernel 6.1 (marco 1)
 
-Branch `hy300-6.1` do `kernel-hy300-rk3566`: `rk3566-hy300.dts` portado para o BSP
-`develop-6.1` e o fragmento `rk3566_hy300.config`. Detalhes, diferenças do DT, pendências e o
+Branch `hy300-ack-6.1` do `kernel-hy300-rk3566` (kernel Android da Rockchip, base do
+LineageOS; padrão do `build-marco1.sh`) e branch `hy300-6.1` (BSP Linux `develop-6.1`, o que
+já bootou no aparelho, `KBASE=bsp`): `rk3566-hy300.dts` e o fragmento `rk3566_hy300.config`. Detalhes, diferenças do DT, pendências e o
 roteiro de teste em [`../docs/kernel-6.1.md`](../docs/kernel-6.1.md).
 
 | Arquivo | Conteúdo |
 |---|---|
 | `build-marco1.sh` | monta do zero kernel, DTB, initramfs e `recovery-marco1.img`, e confere a imagem |
+| `lib-kbase.sh` | base do kernel do build (`KBASE=ack` com clang ou `KBASE=bsp` com GCC) e conferência do `.config` contra os requisitos do Android (testes em `tests/test_kbase.py`) |
 | `initramfs-test/init` | `/init` de teste: limpa o `boot-recovery` da `misc`, relatório no pstore, `reboot -f` em ~20 s |
 | `initramfs-test/hy300-test.sh` | funções do init (testadas em `tests/test_initramfs_misc.py`) |
 | `initramfs-test/build.sh` | busybox estático (musl, aarch64) compilado do fonte e o cpio |

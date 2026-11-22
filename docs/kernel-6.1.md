@@ -9,16 +9,146 @@ Estado em 22/11/2026: **passou no aparelho** (quinto boot). O 6.1 sobe com o pr�
 acha o eMMC e a `misc`, escreve o relatório no pstore e reinicia pelo sysrq `b` aos 20 s. O
 Android de fábrica volta sozinho, com Wi-Fi. Ver "Resultado no aparelho".
 
+**Base nova (22/11, ainda não testada no aparelho):** os patches do HY300 foram levados para o
+kernel Android da Rockchip, branch `hy300-ack-6.1` (ver "Base Android"). É a base do LineageOS
+24.0. O `hy300-6.1` (BSP Linux) continua intacto e é o que já funcionou no aparelho; o
+`build-marco1.sh` compila os dois (`KBASE=ack`, o padrão, ou `KBASE=bsp`).
+
 | Item | Onde |
 |---|---|
-| DT, Makefile e fragmento de config | branch `hy300-6.1` do `kernel-hy300-rk3566`, commit `8b5abca` sobre `develop-6.1` `77168c8d5ab8` (6.1.172) |
-| Script que monta tudo | `kernel/build-marco1.sh` |
+| DT, Makefile e fragmento de config | branch `hy300-ack-6.1` do `kernel-hy300-rk3566` sobre `lineage-23.2` do Lineage-Rockchip `f4f8107cf7cf` (6.1.172). Antes: branch `hy300-6.1`, commit `8b5abca` sobre `develop-6.1` `77168c8d5ab8` |
+| Script que monta tudo | `kernel/build-marco1.sh` (+ `kernel/lib-kbase.sh`) |
 | initramfs de teste | `kernel/initramfs-test/` (`init`, `hy300-test.sh`, `build.sh`) |
-| Testes | `tests/test_initramfs_misc.py`, `tests/test_dtdiff.py`, `tests/test_dtnorm.py`, `kernel/initramfs-test/smoke-qemu.py` |
-| Imagem | `~/hy300-work/marco1/recovery-marco1.img` (fora do repo) |
-| Wi-Fi (AIC8800D80) | commits `2b227eb`, `53fa34e` e `12e46e1` do `hy300-6.1`; modo `hy300.wifi=1` do `/init`; ver "Wi-Fi no 6.1" |
+| Testes | `tests/test_initramfs_misc.py`, `tests/test_dtdiff.py`, `tests/test_dtnorm.py`, `tests/test_kbase.py`, `tests/test_smoke_qemu.py`, `kernel/initramfs-test/smoke-qemu.py` |
+| Imagem | base ack: `~/hy300-work/marco1-ack/recovery-marco1.img`; base bsp: `~/hy300-work/marco1/recovery-marco1.img` (fora do repo) |
+| Wi-Fi (AIC8800D80) | commits `2b227eb`, `53fa34e` e `12e46e1` do `hy300-6.1` (no `hy300-ack-6.1`: `2011306`, `3c7ca16`, `fcca870` e `1e3aa6b`); modo `hy300.wifi=1` do `/init`; ver "Wi-Fi no 6.1" |
 
-## Como reproduzir
+## Base Android (`hy300-ack-6.1`)
+
+O LineageOS 24.0 (Android 17) só aceita o 6.1 pela matriz de FCM nível 8, que exige
+binder, ashmem, `dm-default-key`, `cpufreq_times`, `uid_sys_stats`, `xt_quota2` e o resto do
+`kernel/configs/u/android-6.1`. O `develop-6.1` é o BSP Linux e não tem esses drivers (ver
+`docs/lineageos.md`, "Kernel"). Os patches do HY300 foram para um kernel que já os tem.
+
+**Base: `github.com/Lineage-Rockchip/android_kernel_rockchip_kernel-6.1`, branch
+`lineage-23.2`** (commit `f4f8107cf7cf`, 20/10/2026, remoto `lineage-rockchip` no clone). O
+histórico de primeiro pai é o ACK `android14-6.1` (tag `android14-6.1-2026-06_r1` mesclada) e o
+`develop-6.1` da Rockchip entra por merge, **até o mesmo commit `77168c8d5ab8` em que o
+`hy300-6.1` foi feito**. Por isso os 10 commits do HY300 entraram por cherry-pick com um conflito
+só (duas linhas no `drivers/net/wireless/{Kconfig,Makefile}`, ao lado do `rtl8821cu`). Por cima
+vêm placas da Khadas, Hardkernel e da H96 (Lineage-Rockchip), que não tocam no RK3566 além do
+que está na tabela abaixo. O próprio `android14-6.1` do Google não serve: não tem a parte da
+Rockchip (VOP2, RK628, remotectl, `rk_vendor_storage`, dtsi do RK356x), e a Rockchip não publica
+o kernel do SDK Android.
+
+Commits no `hy300-ack-6.1` (em ordem):
+
+| Commit | O quê |
+|---|---|
+| `79e4d31`, `1c1687d`, `ff4f724` | DT do HY300 (iguais aos do `hy300-6.1`) |
+| `54589e4`, `55433d7` | sinal de vida (ventoinha e watchdog) e DT embutido; o hook no `setup.c` entrou limpo |
+| `67cf4f3`, `07a3d0b` | console no framebuffer; painel SPI no `panel-simple` |
+| `2011306`, `3c7ca16`, `fcca870` | driver AIC8800 e o módulo no fragmento |
+| `a9ca5ee` | fragmento sobre o `rockchip_defconfig` + `android-14.config` (ver "Config") |
+| `67972d3` | `certs/extract-cert.c` e `scripts/sign-file.c` iguais aos do `develop-6.1` (provider pkcs11 do OpenSSL 3): o OpenSSL 4.0 do Fedora 45 não tem mais a API ENGINE que a árvore Android usa |
+| `1e3aa6b` | AIC8800 no clang e no cfg80211 do ACK (abaixo) |
+| `e74809d` a `73e0ec0` | os 7 commits que entraram no `hy300-6.1` depois (Alpine de recuperação: overlayfs/f2fs/erofs/exfat, device mapper, `KEXEC_FILE`, Ethernet USB, GPU no formato do Panfrost, Panfrost como módulo, fonte Terminus) |
+
+O que muda em relação ao `hy300-6.1` que já funcionou:
+
+- **Nomes de nó.** O `rk356x.dtsi` desta árvore usa os nomes antigos: o eMMC é
+  `sdhci@fe310000` (no BSP Linux, `mmc@fe310000`) e o SDIO do Wi-Fi é `dwmmc@fe2c0000`. O
+  `/init` acha a `misc` pelo `PARTNAME`, então não muda nada no teste. No Android,
+  `androidboot.boot_devices=fe310000.sdhci`, igual à fábrica (a árvore `device-hy300` já foi
+  ajustada).
+- **AIC8800.** O ACK traz do 6.3 o `cfg80211_ch_switch_notify` e o
+  `cfg80211_ch_switch_started_notify` com `link_id` e `punct_bitmap`, mas a versão continua 6.1.
+  O Makefile do `aic8800_fdrv` procura `u16 punct_bitmap` no `include/net/cfg80211.h` e define
+  `AICWF_CFG80211_PUNCT_BITMAP`. O clang também recusou um `u8 *` recebendo o `dev_addr`
+  (`const`) e o comentário `/* fall-through */`.
+- **Config Android.** `PREEMPT` (antes `PREEMPT_VOLUNTARY`), `RANDOMIZE_BASE` (KASLR),
+  `SHADOW_CALL_STACK`, SELinux ligado (sem política carregada nada é negado),
+  `STATIC_USERMODEHELPER`, `PRINTK_CALLER` (cada linha do log ganha `[T1]` ou `[C0]` depois do
+  tempo), o `rk_system_heap` do dma-buf (pede o mapa da DDR ao TF-A no boot; se o TF-A de
+  fábrica não souber responder, o driver segue sem ele). Muitos drivers a menos (DVB, MTD,
+  NFS, EFI, Bluetooth por UART); nenhum que o HY300 use no marco 1.
+- **Toolchain.** clang 20 (`clang-r547379`) no lugar do GCC 16. A `Image` ficou com 34,9 MiB
+  (antes 38,4 MiB).
+
+## Como compilar (base Android)
+
+```bash
+cd ~/hy300-handoff/kernel-hy300-rk3566
+git fetch origin hy300-ack-6.1 && git checkout hy300-ack-6.1
+cd ~/hy300-handoff/hy300-rk3566
+KBASE=ack WIFI=1 kernel/build-marco1.sh      # KBASE=ack é o padrão
+```
+
+O script, nesta ordem: confere a árvore (`kernel/configs/android-14.config` tem de existir),
+põe o clang na frente do PATH, gera o `.config` com
+`make ARCH=arm64 LLVM=1 LLVM_IAS=1 rockchip_defconfig android-14.config rk3566_hy300.config`,
+roda `tools/kconfig_check.py` contra `KCONFIG_REQS` (padrão
+`~/android/lineage/kernel/configs/u/android-6.1`) e **para se houver diferença** (relatório em
+`~/hy300-work/marco1-ack/kconfig-check.txt`), compila `Image`, módulos e DTB em
+`~/hy300-work/kbuild-ack-6.1`, monta a imagem em `~/hy300-work/marco1-ack/recovery-marco1.img` e
+roda o smoke no QEMU (kernel à parte em `~/hy300-work/kbuild-ack-6.1-qemu`).
+
+| Variável | Padrão |
+|---|---|
+| `KBASE` | `ack`; `bsp` refaz o marco 1 antigo (branch `hy300-6.1`, GCC, `~/hy300-work/marco1`) |
+| `CLANG_DIR` | `~/android/lineage/prebuilts/clang/host/linux-x86/clang-r547379` (só leitura) |
+| `KCONFIG_REQS` | `~/android/lineage/kernel/configs/u/android-6.1`; se não existir, a conferência é pulada |
+| `KBUILD_OUT` | `~/hy300-work/kbuild-ack-6.1` |
+
+Pacotes no host: os mesmos do marco 1 (o GCC cruzado ainda compila o musl, o busybox e o
+wpa_supplicant do initramfs). O kernel usa só o clang dos prebuilts do LineageOS.
+
+Por que o `clang-r547379` (clang 20): é o mais antigo dos prebuilts do checkout, o mais perto
+do clang 17 com que o Google testa o `android14-6.1`. O padrão do Lineage 24.0
+(`ClangDefaultVersion`, `clang-r584948`, clang 22) também deve servir, mas não foi testado. Se
+o kernel um dia for compilado pelo próprio build do Lineage, `TARGET_KERNEL_CLANG_VERSION :=
+r547379` mantém o mesmo compilador.
+
+Resultado do build de 22/11 (`hy300-ack-6.1` `73e0ec0`, `WIFI=1`):
+
+| Arquivo | Tamanho |
+|---|---|
+| `Image` (6.1.172-hy300, clang 20) | 36.565.000 bytes |
+| `Image.gz` (`gzip -9 -n`, para a `boot` do Lineage) | 15.172.609 bytes |
+| `rk3566-hy300.dtb` | 168.686 bytes |
+| `recovery-marco1.img` | 113.246.208 bytes, igual à partição |
+
+SHA-256 da imagem desse build (`WIFI=1`, tem as credenciais da rede: não publicar):
+`ce3a481c100d6557939e3cf5374239ff66ed6e137be9fabbdd875a6787fdbc14`. Outro build dá outro hash
+(data do busybox); o script grava o do build atual em `recovery-marco1.img.sha256`.
+
+`kconfig_check.py` contra `u/android-6.1`: **0 diferenças**, kernel 6.1.172 >= 6.1.0.
+Smoke no QEMU: passa nos três modos (padrão, `hy300.shutdown_debug=1`, `hy300.wifi=1`).
+
+O smoke precisou de dois ajustes para esta base: o `rk_system_heap` faz SMC ao TF-A no
+initcall (o virt não tem TF-A; entrou no `initcall_blacklist` junto do `rockchip_drm_init`), e o
+`PRINTK_CALLER` mudou o formato da linha do `sysrq: Resetting`.
+
+### Riscos do primeiro boot da base Android
+
+O fluxo é o mesmo do marco 1 (slot `recovery`, `reboot-to-test-slot.sh`, watchdog, pstore).
+O que pode dar diferente:
+
+1. **Kernel não sobe ou trava cedo.** Outro compilador, KASLR, shadow call stack e
+   `PREEMPT` completo. O sinal de vida continua: ventoinha ligada = o `setup_arch` rodou;
+   watchdog de 89 s desliga o aparelho se travar (ligar pelo botão, log no pstore).
+2. **Driver novo no boot.** O `rockchip_defconfig` liga coisas que o `rockchip_linux_defconfig`
+   não ligava (por exemplo o `rk_system_heap`, binder, ashmem, incfs, netfilter do Android). Um
+   panic reinicia em 10 s e fica no `dmesg-ramoops-0`.
+3. **eMMC com outro nome** (`fe310000.sdhci`). Só importa para o Android; o `/init` de teste
+   procura pelo nome da partição.
+4. **Wi-Fi.** O AIC8800 compilou com a API do cfg80211 do ACK; o caminho de troca de canal
+   (CSA, só no modo AP) mudou e não é usado no teste. O modo `hy300.wifi=1` carrega os módulos
+   desta árvore (mesmo `vermagic`).
+5. **Tela.** Mesmo DRM e mesmo painel; o `VT` foi religado no fragmento porque o
+   `rockchip_defconfig` o desliga e sem ele não há fbcon.
+
+## Como reproduzir (marco 1, BSP Linux)
 
 Pacotes no Fedora:
 
@@ -39,9 +169,11 @@ git fetch origin hy300-6.1 && git checkout hy300-6.1
 Tudo de uma vez (kernel, DTB, initramfs, resource.img, imagem, conferência e QEMU):
 
 ```bash
-kernel/build-marco1.sh            # fonte, trabalho e backup nos caminhos padrão
-SMOKE=0 kernel/build-marco1.sh    # sem o teste no QEMU
+KBASE=bsp kernel/build-marco1.sh            # marco 1 no BSP Linux (hy300-6.1)
+KBASE=bsp SMOKE=0 kernel/build-marco1.sh    # sem o teste no QEMU
 ```
+
+Sem `KBASE` o script compila a base Android (seção "Como compilar (base Android)").
 
 O script confere o `recovery.img` de fábrica contra `~/hy300-backup/SHA256SUMS` antes de usar.
 No fim ele desmonta a imagem gerada e compara cada seção com o arquivo de origem: kernel,
@@ -74,6 +206,9 @@ que só tem os applets dele.
 
 ## Toolchain
 
+Base Android (`hy300-ack-6.1`): clang 20 dos prebuilts do LineageOS (`LLVM=1 LLVM_IAS=1`), ver
+"Como compilar (base Android)". O resto desta seção é do BSP Linux.
+
 GCC 16.2.1 cruzado do Fedora (`gcc-aarch64-linux-gnu`). O SDK Linux da Rockchip para o 6.1 usa
 GCC 10.3, então GCC é o compilador que o branch espera. O clang 23 do sistema estaria muito à
 frente do clang 17 usado no Android para o 6.1. O pacote do Fedora é reproduzível com um
@@ -97,8 +232,15 @@ A libc é o musl 1.2.5, compilado do fonte com o mesmo GCC. Os headers do Linux 
 `arch/arm64/configs/rk3566_hy300.config` segue o padrão do branch: um fragmento sobre o defconfig.
 
 ```bash
-make ARCH=arm64 rockchip_linux_defconfig rk3566.config rk3566_hy300.config
+make ARCH=arm64 rockchip_linux_defconfig rk3566.config rk3566_hy300.config          # hy300-6.1
+make ARCH=arm64 LLVM=1 LLVM_IAS=1 rockchip_defconfig android-14.config rk3566_hy300.config   # hy300-ack-6.1
 ```
+
+No `hy300-ack-6.1` o fragmento muda em dois pontos (commit `a9ca5ee`): o Android exige
+`CPU_FREQ`, `CPU_FREQ_STAT` e `CPU_FREQ_TIMES`, então o núcleo do cpufreq fica ligado e só os
+drivers saem (`CPUFREQ_DT`, `ARM_ROCKCHIP_CPUFREQ`; sem driver a frequência não muda, como
+antes), e `VT=y` volta para o fbcon existir. Os Mali Midgard e Utgard do `rockchip_defconfig`
+também saem. A tabela abaixo continua valendo.
 
 | Opção | Por quê |
 |---|---|
@@ -405,8 +547,9 @@ publicar, como o serial.
 ### Roteiro do teste no aparelho
 
 ```bash
-WIFI=1 kernel/build-marco1.sh                      # imagem com hy300.wifi=1 (+ .sha256)
-scripts/flash-test-recovery.sh ~/hy300-work/marco1/recovery-marco1.img
+WIFI=1 kernel/build-marco1.sh                      # imagem com hy300.wifi=1 (+ .sha256), base ack
+scripts/flash-test-recovery.sh ~/hy300-work/marco1-ack/recovery-marco1.img
+# base bsp (hy300-6.1): KBASE=bsp WIFI=1 kernel/build-marco1.sh e ~/hy300-work/marco1/recovery-marco1.img
 scripts/reboot-to-test-slot.sh --dry-run
 scripts/reboot-to-test-slot.sh
 ```

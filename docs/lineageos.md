@@ -14,7 +14,7 @@ Nada foi compilado. O checkout do Lineage (`~/android/lineage`) ainda estava no 
 | ABI | só 64 bits (`core_64_bit_only.mk`) | um zygote só; o kernel já é arm64. Apps só armeabi-v7a deixam de rodar |
 | RAM | `atv_lowram_defaults.mk` (low_ram, perfis de boot de TV, speed-profile) + zram 75 % | 1,5 GB; a fábrica já era Android Go (`ro.config.low_ram=true`, `gmsversion 12_202201.go`) |
 | Kernel | 6.1, com **FCM nível 8** no manifesto | no Android 17 o 6.1 só é aceito pela matriz de nível 8 |
-| Base do kernel | **recomendo levar os patches do HY300 para o kernel Rockchip Android (ACK) 6.1.172** publicado pelo Lineage-Rockchip | o nosso `develop-6.1` é o BSP Linux, sem ashmem, dm-default-key, cpufreq_times, uid_sys_stats e xt_quota2 |
+| Base do kernel | **feito (22/11): branch `hy300-ack-6.1`**, patches do HY300 sobre o kernel Rockchip Android (ACK `android14-6.1` + BSP) 6.1.172 do Lineage-Rockchip, clang 20 | o nosso `develop-6.1` é o BSP Linux, sem ashmem, dm-default-key, cpufreq_times, uid_sys_stats e xt_quota2. O `.config` novo não tem diferença contra o `u/android-6.1` |
 | Boot | boot.img **header v2**, sem `vendor_boot`, resource.img de fábrica na seção `second`, kernel comprimido | é o que o U-Boot de fábrica já boota; a `Image` crua não cabe nos 40 MiB da `boot` |
 | Gráficos | **Mesa Panfrost + drm_hwcomposer + minigbm** (sem blobs) | repositório público; os blobs Mali G52 de 64 bits existem, mas não podem ir para o repo |
 | Keystone | reimplementar no **SurfaceFlinger/RenderEngine** com a mesma API de props `persist.sys.keystone.*` | o app de configurações continua igual; Skia aplica a homografia dos 4 cantos |
@@ -196,6 +196,22 @@ fuse-bpf.
 aparelhos Rockchip usam no Lineage. Decisão do usuário, porque muda o branch em que o outro
 trabalho (Wi-Fi) está.
 
+**Feito em 22/11 (aprovado pelo usuário): branch `hy300-ack-6.1`** do `kernel-hy300-rk3566`,
+sobre o `lineage-23.2` do Lineage-Rockchip (`f4f8107cf7cf`). Esse branch é o ACK
+`android14-6.1` com o `develop-6.1` mesclado até o mesmo `77168c8d5ab8` do nosso `hy300-6.1`,
+então os patches entraram por cherry-pick. Resultado:
+
+- `rockchip_defconfig` + `android-14.config` + `rk3566_hy300.config`, clang 20
+  (`clang-r547379` dos prebuilts do Lineage): `kconfig_check.py` contra `u/android-6.1` dá **0
+  diferenças** (antes, 170). Os oito símbolos que não existiam (`ASHMEM`, `DM_DEFAULT_KEY`,
+  `CPU_FREQ_TIMES`, `UID_SYS_STATS`, `NETFILTER_XT_MATCH_QUOTA2(_LOG)`,
+  `USB_CONFIGFS_F_ACC`, `USB_CONFIGFS_F_AUDIO_SRC`) estão ligados;
+- o DVFS continua desligado sem violar o requisito: núcleo do cpufreq ligado, nenhum driver;
+- `kernel/build-marco1.sh` com `KBASE=ack` (padrão) gera a mesma imagem de teste do slot
+  `recovery`, com o modo Wi-Fi; o smoke no QEMU passa;
+- no aparelho ainda não foi testado. Detalhes, commits e riscos em `docs/kernel-6.1.md`, "Base
+  Android".
+
 Mais pontos do kernel:
 
 - **Panfrost no DT**: o nó `gpu@fde60000` do BSP tem `clock-names = "clk_mali", "clk_gpu"`. O
@@ -206,7 +222,8 @@ Mais pontos do kernel:
   os mesmos registradores. Ligar um só: MPP (cobre o rkvdec com HEVC/VP9 4K) ou hantro (só
   H.264/VP8/MPEG-2 até 1080p, mas V4L2 padrão).
 - **Tamanho**: a `Image` do marco 1 tem 38,8 MiB; com `gzip -9`, 14,5 MB. O defconfig Linux do
-  BSP liga muita coisa que o HY300 não tem; um defconfig Android com módulos diminui mais.
+  BSP liga muita coisa que o HY300 não tem; um defconfig Android com módulos diminui mais. Na
+  base Android (`hy300-ack-6.1`, quase tudo embutido): 34,9 MiB, 15,2 MB com `gzip -9`.
 - `kernel/configs` do checkout local ainda não estava baixado; os arquivos foram lidos do
   GitHub do LineageOS (mesmo branch).
 
@@ -225,15 +242,16 @@ Mais pontos do kernel:
   erro ("Hash from header ... Failed to load android image"). `tools/mkbootimg_hy300.py` da
   árvore (`BOARD_CUSTOM_MKBOOTIMG`) regrava o ID; o teste confere contra o `boot.img` de
   fábrica.
-- **Tamanho da `boot`**: 40 MiB. A `Image` crua do 6.1 (38,8 MiB) + ramdisk + resource
-  (2,9 MB) não cabe. `Image.gz` (14,5 MB) cabe. O U-Boot tem gzip, lz4, "Uncompressing %s" e
+- **Tamanho da `boot`**: 40 MiB. A `Image` crua do 6.1 (38,8 MiB no BSP, 34,9 MiB na base
+  Android) + ramdisk + resource (2,9 MB) não cabe com folga. `Image.gz` (14,5 a 15,2 MB) cabe. O U-Boot tem gzip, lz4, "Uncompressing %s" e
   "Can't get image compression!" no caminho do `bootm` (strings do `uboot.img`); só o teste
   no slot `recovery` confirma que ele descomprime uma imagem Android. Se não descomprimir: kernel
   menor com módulos (ainda cabe só se a `Image` ficar abaixo de ~36 MB).
 - **cmdline**: vem toda do boot.img (a de fábrica está no header; o U-Boot só acrescenta
   `storagemedia`, `androidboot.mode`, `serialno`, `verifiedbootstate`, `dtb_idx` e `earlycon`).
-  `androidboot.hardware=rk3566`. **`androidboot.boot_devices=fe310000.mmc`**: no 6.1 o eMMC
-  é `mmc@fe310000`; o `fe310000.sdhci` da fábrica deixaria o `/dev/block/by-name` vazio.
+  `androidboot.hardware=rk3566`. **`androidboot.boot_devices=fe310000.sdhci`**: no kernel
+  Android (`hy300-ack-6.1`) o eMMC é `sdhci@fe310000`, como na fábrica. No BSP Linux
+  (`hy300-6.1`) era `mmc@fe310000`; o nome errado deixa o `/dev/block/by-name` vazio.
 - Endereços (base `0x10000000`, kernel `+0x8000`, ramdisk `+0x1000000`, second `+0xf00000`,
   tags `+0x100`, dtb `+0x1f00000`) iguais aos do boot.img de fábrica.
 
@@ -305,7 +323,7 @@ A conferir no aparelho/código: o caminho de plataforma do xHCI do dwc3 (`usbdrd
 | Risco | Efeito | Mitigação |
 |---|---|---|
 | U-Boot não descomprime `Image.gz` de boot.img Android | Lineage não cabe na `boot` | testar no slot `recovery` primeiro; kernel com módulos |
-| Kernel sem os requisitos do FCM 8 | falhas em netd/vold/memória compartilhada; pode aparecer o aviso de "problema interno" no boot | rebase no kernel Rockchip ACK ou portar os 5 drivers; `kconfig_check.py` até zerar |
+| Kernel sem os requisitos do FCM 8 | falhas em netd/vold/memória compartilhada; pode aparecer o aviso de "problema interno" no boot | resolvido no build: `hy300-ack-6.1` zera o `kconfig_check.py`; o `build-marco1.sh` para se voltar a ter diferença |
 | Panfrost + drm_hwcomposer no VOP2 do BSP | tela preta, composição lenta | marco só de gráficos com `modetest`/`kmscube` antes do Android; plano B blob local |
 | 1,5 GB de RAM com Android 17 de 64 bits | lmkd mata apps, launcher recarrega | low_ram, zram 75 %, sem GMS, medir no marco de primeiro boot |
 | Apps só de 32 bits | não instalam | aceitar (VLC e AirScreen têm arm64) ou rever a decisão de ABI |
@@ -319,6 +337,8 @@ A conferir no aparelho/código: o caminho de plataforma do xHCI do dwc3 (`usbdrd
 1. **Kernel Android**: escolher a base (recomendado: Rockchip ACK 6.1.172), aplicar os
    patches do HY300, config Android até o `kconfig_check.py` zerar (ou só sobrarem os
    símbolos sem uso), build com clang. Boot pelo slot `recovery` com o initramfs de teste.
+   **22/11: feito até o build** (`hy300-ack-6.1`, 0 diferenças, clang 20, smoke no QEMU nos
+   três modos, imagem `~/hy300-work/marco1-ack/recovery-marco1.img`). Falta o boot no aparelho.
 2. **Boot comprimido**: `Image.gz` dentro de um boot.img v2 feito com o
    `mkbootimg_hy300.py`, no slot `recovery`. Confirma o tamanho e o ID.
 3. **Gráficos fora do Android**: Panfrost + `modetest`/`kmscube` no initramfs de teste.
@@ -341,7 +361,8 @@ A conferir no aparelho/código: o caminho de plataforma do xHCI do dwc3 (`usbdrd
 
 ## O que não foi verificado
 
-- Nada foi compilado: nem a árvore, nem o kernel com config Android.
+- A árvore não foi compilada. O kernel com config Android foi (22/11, `hy300-ack-6.1`), mas
+  ainda não bootou no aparelho.
 - `kernel/configs`, `vendor/lineage`, `external/mesa3d`, `external/minigbm`,
   `external/drm_hwcomposer` e `hardware/interfaces` foram lidos fora do checkout (GitHub do
   LineageOS e googlesource na tag `android-17.0.0_r1`); o `build/make` e o `device/lineage/atv`
