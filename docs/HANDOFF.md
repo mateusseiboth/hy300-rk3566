@@ -107,7 +107,7 @@ Commitado (o README do app tem a tabela de estado com [testado]/[não testado] e
     (marca no pstore, argumentos da recovery no `/cache/recovery/last_log`, hash da `misc`) →
     `scripts/flash-test-recovery.sh ~/hy300-backup/recovery.img` para voltar.
   - A recovery de fábrica roda inteira nesse teste e limpa a `misc` ao sair: sem risco de loop.
-- **Marco 1 (em andamento):** `develop-6.1` com o DT do HY300 portado, initramfs de teste que limpa a `misc` (só se tiver
+- **Marco 1 (pronto, falta executar com o usuário):** branch `hy300-6.1` do kernel (6.1.172) com o DT do HY300 portado, imagem em `~/hy300-work/marco1/recovery-marco1.img` (`kernel/build-marco1.sh`). Entrar no slot de teste com `scripts/reboot-to-test-slot.sh` (só o registrador de reboot-mode, sem BCB: tirar da tomada sempre volta ao Android), nunca com `adb reboot recovery`. Initramfs de teste que limpa a `misc` (só se tiver
   `boot-recovery`), registra um relatório no pstore e reinicia sozinho em ~20 s. Detalhes em `docs/kernel-6.1.md`.
 - **Marco 2:** vendor 64 bits + LineageOS (o branch mais novo disponível; Android 17 quando o Lineage chegar lá).
   Base possível: GloDroid (mainline, Mesa/Panfrost, já roda em placas RK3566) ou árvores LineageOS de outros RK356x (BSP + blobs 64 bits).
