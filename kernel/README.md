@@ -46,9 +46,13 @@ roteiro de teste em [`../docs/kernel-6.1.md`](../docs/kernel-6.1.md).
 | `initramfs-test/smoke-qemu.py`, `qemu.config` | teste de fumaça do init num 6.1 no QEMU virt |
 | `reboot-recovery/` | binário estático que reinicia para a recovery só pelo registrador de reboot-mode, sem BCB (usado por `scripts/reboot-to-test-slot.sh`) |
 | `lib-musl.sh` | baixa e compila o musl (comum ao initramfs e ao `reboot-recovery`) |
+| `initramfs-test/hy300-wifi.sh` | funções do modo Wi-Fi do init (`hy300.wifi=1`; testadas em `tests/test_initramfs_wifi.py`) |
+| `wifi/build-wpa-supplicant.sh` | `wpa_supplicant` e `wpa_cli` estáticos (musl, libnl, nl80211) para o modo Wi-Fi |
 
 ## Próximos passos
 
 1. Gravar e rodar o marco 1 com o usuário presente (roteiro em `../docs/kernel-6.1.md`).
 2. Ligar de volta, um por vez, o que o marco 1 deixou de fora: DVFS, GPU, RK628.
-3. Drivers que não existem no 6.1: Wi-Fi AIC8800 e motor de foco (`/sys/class/motor_cc`).
+3. Driver que não existe no 6.1: motor de foco (`/sys/class/motor_cc`). O Wi-Fi AIC8800 já
+   está na árvore (`drivers/net/wireless/aic8800`); falta o teste no aparelho
+   (`docs/kernel-6.1.md`, "Wi-Fi no 6.1").

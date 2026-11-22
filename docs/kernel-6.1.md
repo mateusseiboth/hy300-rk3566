@@ -16,6 +16,7 @@ Android de fábrica volta sozinho, com Wi-Fi. Ver "Resultado no aparelho".
 | initramfs de teste | `kernel/initramfs-test/` (`init`, `hy300-test.sh`, `build.sh`) |
 | Testes | `tests/test_initramfs_misc.py`, `tests/test_dtdiff.py`, `tests/test_dtnorm.py`, `kernel/initramfs-test/smoke-qemu.py` |
 | Imagem | `~/hy300-work/marco1/recovery-marco1.img` (fora do repo) |
+| Wi-Fi (AIC8800D80) | commits `2b227eb`, `53fa34e` e `12e46e1` do `hy300-6.1`; modo `hy300.wifi=1` do `/init`; ver "Wi-Fi no 6.1" |
 
 ## Como reproduzir
 
@@ -279,11 +280,155 @@ o reboot veio por volta dos 20 s. Esse teste achou um bug real antes do aparelho
 busybox ficam em `/usr/bin` e o PATH do init não tinha esse diretório, então `cut` falhava, o
 uptime vinha vazio e o reboot de segurança disparava na hora.
 
+## Wi-Fi no 6.1
+
+Objetivo: um terminal ao vivo no 6.1 sem console serial. Com `hy300.wifi=1` na cmdline o
+`/init` de teste carrega o driver do AIC8800, conecta na rede de casa com IP fixo, abre um
+`telnetd` (busybox, porta 23, `/bin/sh` de root, sem senha) e fica no ar até um prazo.
+
+### Chip e driver
+
+- **Variante: AIC8800D80, revisão U02.** O dmesg de fábrica (`kernel/dmesg-boot.txt`) mostra
+  o SDIO `vid:0xC8A1 did:0x0082` (função 2: `0x0182`), que no driver é o
+  `PRODUCT_ID_AIC8800D80`, e o `aic8800_bsp` carrega `fw_patch_table_8800d80_u02.bin`,
+  `fw_adid_8800d80_u02.bin`, `fw_patch_8800d80_u02.bin` e `fmacfw_8800d80_u02.bin`. Os
+  `aic_userconfig_8800dc/dw.txt` do vendor são de outras montagens.
+- **Driver:** `aic8800_bsp` e `aic8800_fdrv` (SDIO) do `aic8800d_linux_sdk_V3.0_2023_1107_581567ff`,
+  na cópia que a Radxa publica em `github.com/radxa-pkg/aic8800` (tag `3.0+git20231107.581567ff-2`,
+  commit `956e3e8c239f`; o `debian/copyright` declara `src/*` como GPL-2 e os módulos têm
+  `MODULE_LICENSE("GPL")`). Escolhido por ser a versão do firmware de fábrica: o
+  `fmacfw_8800d80_u02.bin` do HY300 tem o mesmo MD5 (`2aa840ea...`) do SDK dessa data, e o
+  dmesg de fábrica mostra `RELEASE_DATE:2023_1108`. As versões mais novas do SDK (V4, V5) trazem
+  firmware novo, e misturar driver novo com firmware antigo é risco à toa.
+- **Na árvore:** `drivers/net/wireless/aic8800/` do branch `hy300-6.1`, `CONFIG_AIC8800=m` no
+  `rk3566_hy300.config`. Ficou de fora o `aicwf_firmware_array.c` (firmware embutido como
+  vetores em C, só usado com `CONFIG_FIRMWARE_ARRAY`) e o `aic8800_btlpm` (Bluetooth).
+  Ajustes para o 6.1: `cfg80211_ch_switch_notify` com 3 argumentos, `eth_hw_addr_set` no lugar
+  de escrever no `dev_addr`, `REGULATORY_IGNORE_STALE_KICKOFF` (removido no 6.1.39) e um
+  `printk` com argumentos trocados.
+- **Plataforma:** compilado sem `CONFIG_PLATFORM_ROCKCHIP*`. Quem liga o chip é o
+  `sdio-pwrseq` do DT (WL_REG_ON no GPIO2_B1, 32 kHz do RTC), e o 6.1 já enumera o cartão
+  (`mmc1: new ultra high speed SDR104 SDIO card at address 390b`). O `aic8800_bsp` só registra
+  o driver SDIO e acha o cartão. O DT não mudou: `wifi_chip_type = "ap6398s"` é herança da
+  placa de referência, igual na fábrica, e o driver não usa o `rfkill-wlan`. O SDIO segue
+  limitado a 50 MHz, como na fábrica.
+- **Firmware:** lido pelo `aic8800_bsp` de `/lib/firmware/aic8800` (parâmetro `aic_fw_path`,
+  também é o padrão do build). Não vai para o repositório.
+
+### Como o build pega firmware e rede
+
+```bash
+WIFI=1 kernel/build-marco1.sh
+```
+
+Com `WIFI=1` o `build-marco1.sh` acrescenta `hy300.wifi=1` à cmdline e monta uma raiz extra
+em `~/hy300-work/marco1/wifi-root` que o `initramfs-test/build.sh` copia por cima da raiz:
+
+| No initramfs | De onde vem |
+|---|---|
+| `/lib/modules/aic8800/aic8800_{bsp,fdrv}.ko` | build do kernel (`make modules`), sem símbolos de depuração |
+| `/lib/firmware/aic8800/` | `tools/wifi_payload.py` tira do `~/hy300-work/vendor.img` (ext4, `debugfs`) os 4 binários acima e o `aic_userconfig_8800d80.txt`, e confere o MD5 de cada um (os dos binários são os que o driver de fábrica imprime no dmesg) |
+| `/usr/sbin/wpa_supplicant`, `wpa_cli` | `kernel/wifi/build-wpa-supplicant.sh`: wpa_supplicant 2.11 e libnl 3.11.0, estáticos com musl, driver nl80211 e criptografia interna do hostap (WPA/WPA2-PSK; WPA3-SAE precisaria de OpenSSL). Tarballs conferidos por SHA-256 |
+| `/etc/wpa_supplicant.conf` (modo 600) | gerado do arquivo de credenciais: SSID em hexadecimal e a PSK já derivada (PBKDF2), sem a senha em claro |
+| `/etc/hy300-wifi.conf` | IP com prefixo, gateway e DNS, validados (o gateway tem de estar na rede do IP) |
+
+As credenciais ficam só em `~/hy300-work/wifi/credenciais.conf` (ou `WIFI_CREDENTIALS`), com
+modo 600. O build recusa o arquivo se ele faltar, se outro usuário puder lê-lo, se faltar uma
+chave ou se um valor for inválido, e diz o que corrigir. Formato (valores fictícios):
+
+```
+WIFI_SSID=NomeDaRede
+WIFI_PSK=senha-da-rede
+WIFI_ADDRESS=192.0.2.10/24
+WIFI_GATEWAY=192.0.2.1
+WIFI_DNS=192.0.2.1
+```
+
+O IP é fixo (sem DHCP): o coordenador já sabe onde procurar o aparelho. O `vendor.img` vem de
+`VENDOR_IMG` (padrão `~/hy300-work/vendor.img`). Nada disso sai do `~/hy300-work`. A imagem
+gerada tem as credenciais da rede: não publicar a `recovery-marco1.img` nem o initramfs.
+
+### O que o `/init` faz com `hy300.wifi=1`
+
+1. Arma o watchdog (60 s) e **alimenta a cada 10 s** (o reset do watchdog desliga o aparelho).
+2. Grava o prazo: início + `hy300.wifi_limit` segundos (padrão 900, 15 min). Um laço confere o
+   prazo a cada 5 s e, quando ele chega, mata o daemon do watchdog com `kill -9` (sem o
+   fechamento mágico o watchdog continua armado) e faz o `sysrq b`, como o marco 1.
+3. Apaga o `boot-recovery` da `misc` (mesma regra do marco 1) e aos 10 s escreve o relatório.
+4. `insmod aic8800_bsp.ko aic_fw_path=/lib/firmware/aic8800`, `insmod aic8800_fdrv.ko`, espera
+   até 20 s pela interface sem fio (`/sys/class/net/*/wireless`, normalmente `wlan0`).
+5. `wpa_supplicant -B -D nl80211` (log em `/tmp/wpa_supplicant.log`) e espera até 60 s pelo
+   `wpa_state=COMPLETED`.
+6. IP fixo, rota padrão e `/etc/resolv.conf`; ARP não solicitado (o IP pode ter sido do Android,
+   com outro MAC); `ping` no gateway (só informativo); `telnetd -p 23 -l /bin/sh`.
+7. A cada 15 s escreve na tela e no `/dev/kmsg` (pstore):
+   `hy300: [wifi] IP <ip>, telnet <ip> 23; reinicia em <n> s`.
+
+Cada etapa sai com o prefixo `hy300: [wifi]`. Se uma etapa falha, aparece
+`hy300: [wifi] FALHOU: <motivo>` e o prazo cai para 2 minutos: a mensagem fica na tela e o
+aparelho volta ao Android sozinho. Sem a flag o `/init` é o do marco 1 (reinicia aos 20 s).
+
+Pelo telnet:
+
+```sh
+touch /tmp/hy300-ficar            # desliga o reinício automático (o watchdog segue alimentado)
+rm /tmp/hy300-ficar               # religa; se o prazo já passou, reinicia em até 5 s
+cat /tmp/wpa_supplicant.log; wpa_cli -i wlan0 status; dmesg | tail
+echo b > /proc/sysrq-trigger      # reinicia agora (volta ao Android)
+```
+
+O log do pstore e o `/tmp/wpa_supplicant.log` podem ter o SSID e os MACs: limpar antes de
+publicar, como o serial.
+
+### Testes
+
+- `tests/test_wifi_payload.py`: credenciais (arquivo ausente, modo, chaves, IP e gateway, limites
+  do SSID e da senha), PSK contra o vetor do IEEE 802.11i, conteúdo dos arquivos gerados,
+  extração e MD5 do firmware.
+- `tests/test_initramfs_wifi.py`: as funções de `hy300-wifi.sh` com `insmod`, `ip`, `wpa_cli`,
+  `wpa_supplicant` e `arping` falsos, no `/bin/sh` do host e no busybox.
+- `smoke-qemu.py` ganhou uma terceira rodada com `hy300.wifi=1 hy300.wifi_limit=50`: o virt não
+  tem SDIO, então o `aic8800_bsp` carrega, não acha o chip em 2 s e o `aic8800_fdrv` falha
+  (`No such device`). O teste confere BCB apagado, relatório, `FALHOU`, nenhum reboot aos 20 s e
+  o reboot no prazo (50 a 70 s). As duas rodadas antigas continuam iguais.
+
+### Roteiro do teste no aparelho
+
+```bash
+WIFI=1 kernel/build-marco1.sh                      # imagem com hy300.wifi=1 (+ .sha256)
+scripts/flash-test-recovery.sh ~/hy300-work/marco1/recovery-marco1.img
+scripts/reboot-to-test-slot.sh --dry-run
+scripts/reboot-to-test-slot.sh
+```
+
+Na tela, em ordem (cerca de 30 s depois do logo):
+
+1. `hy300: [init] wifi: início (t=... s), reinicia em 900 s; touch /tmp/hy300-ficar para ficar`;
+2. o relatório (`hy300: [versao]`, `[mmc]` etc.);
+3. `aicbsp_init`, `aicbsp: aicbsp_sdio_probe:1 vid:0xC8A1  did:0x0082`, as linhas
+   `rwnx_load_firmware ... md5` e `ieee80211 phy0: ...`;
+4. `hy300: [wifi] interface wlan0, iniciando o wpa_supplicant`, `conectado`, `gateway ... responde`,
+   `telnetd na porta 23`;
+5. a cada 15 s: `hy300: [wifi] IP <ip>, telnet <ip> 23; reinicia em <n> s`.
+
+No PC: `telnet <ip>` (o IP do `credenciais.conf`; também aparece na tela). Se o aparelho não
+responder, `ping <ip>` e `ip neigh` para ver se o ARP chegou. Para sair do teste: `echo b >
+/proc/sysrq-trigger` pelo telnet, ou esperar o prazo. Depois, de volta no Android:
+`scripts/check-test-boot.sh hy300.test=marco1` e `adb pull /sys/fs/pstore/console-ramoops-0`.
+
+| Falha | Na tela | O que acontece |
+|---|---|---|
+| módulo não carrega / chip não responde | `FALHOU: insmod ... aic8800_fdrv falhou` (e as linhas `aicbsp` antes) | reinicia em 2 min |
+| sem `wlan0` | `FALHOU: nenhuma interface sem fio em 20 s` | reinicia em 2 min |
+| senha errada, rede fora do alcance, roteador só WPA3 | `FALHOU: sem conexão em 60 s (estado SCANNING/4WAY_HANDSHAKE/...)` | reinicia em 2 min |
+| conectou mas o PC não alcança | linhas de status normais | `ping`, ARP; esperar o prazo de 15 min |
+| kernel trava ou dá panic no driver | log para | panic reinicia em 10 s; travamento sem panic: o watchdog desliga o aparelho em ~60 s (ligar pelo botão, o log fica no pstore) |
+
 ## Pendências por driver
 
 | Bloco | O que há no 6.1 | Falta |
 |---|---|---|
-| Wi-Fi AIC8800 (SDIO) | nada: o `rockchip_wlan` do 6.1 só tem `bcmdhd`. O DT de SDIO, `sdio-pwrseq` e `wlan-platdata` já estão portados | portar o driver aberto da AICSemi (`aic8800_bsp`, `aic8800_fdrv`, `aic8800_btlpm`) como módulo fora da árvore; os firmwares estão em `/vendor/etc/firmware` (`kernel/vendor-firmware-list.txt`) |
+| Wi-Fi AIC8800 (SDIO) | `aic8800_bsp` e `aic8800_fdrv` na árvore (`CONFIG_AIC8800=m`), carregados pelo `/init` com `hy300.wifi=1` | testar no aparelho ("Wi-Fi no 6.1"); Bluetooth (`aic8800_btlpm`) não foi portado |
 | RK628 (entrada HDMI) | `VIDEO_RK628_CSI` (`drivers/media/i2c/rk628`) e `drivers/misc/rk628`, ligados no config | o nó está portado e desligado. Ligar depois que o display funcionar e conferir o caminho `csi2-dphy0` → `rkisp` |
 | Motor de foco | nada. Na fábrica o nó `rk_motor` (`usb-cam-gpio`) não tem propriedades: o driver fechado da TXCZ fixa os GPIOs no código | escrever o driver a partir de `reverse-engineering/libfocus/README.md`, mantendo `/sys/class/motor_cc` |
 | QMI8658 | sem driver. O chip nem está montado: no dmesg de fábrica o QMI8658 lê devid 0, e quem responde é o SC7A20 em `0x19` (id `0x11`) | conferir no relatório se o `gsensor` do SC7A20 aparece em `entrada` |
