@@ -44,8 +44,10 @@ Busca em todos os APKs TXCZ do ROM (e strings de libs). Domínios e IPs encontra
 
 ## `com.android.toofifi` (`/odm/bundled_persist-app/TXCZTVApp_FTZX_V3.2.3.0_...apk`, 78 MB)
 
-App de TV/conteúdo instalado como "persist" a partir do `odm`. Não foi analisado (fora do escopo). `persist.zeasn.customer=TXCZ`
-e `persist.zeasn.devicetype=RK3566_Projector` indicam integração com a Zeasn (loja/OS de TV). **Pendente.**
+App de **espelhamento de tela** (AirPlay/Miracast/DLNA: componentes `com.mphotool.*`, `com.waxrain.airplaydmr` —
+AirPin —, `tv.danmaku.ijk` — ijkplayer), processo persistente com uid system, receptor de `BOOT_COMPLETED`.
+`persist.zeasn.customer=TXCZ` / `persist.zeasn.devicetype=RK3566_Projector` sugerem também integração com a Zeasn
+(loja/OS de TV). Comunicação de rede **não analisada — pendente**.
 
 ## TxczSetting / launcher
 
