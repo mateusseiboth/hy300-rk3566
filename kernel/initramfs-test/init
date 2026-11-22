@@ -212,9 +212,23 @@ report_gateway() {
 	wifi_log "gateway $WIFI_GATEWAY responde"
 }
 
+# Segunda chance depois de religar o chip pelo WL_REG_ON (recover_wifi_chip): diz se o chip
+# travado volta sem tirar da tomada.
+retry_wifi_modules() {
+	wifi_log "primeira carga falhou: $(echo "$1" | tr '\n' ' ')"
+	report_section sdio "$KMSG" dump_sdio_state
+	wifi_log "religando o chip (WL_REG_ON em 0 por $WIFI_POWER_OFF_SECONDS s) e tentando de novo"
+	result=$(recover_wifi_chip 2>&1) || { fail_wifi "$result"; return 1; }
+	wifi_log "chip de volta no SDIO, segunda carga"
+	result=$(load_wifi_modules "$WIFI_MODULE_DIR" "$WIFI_FIRMWARE_DIR" 2>&1) && return 0
+	report_section sdio "$KMSG" dump_sdio_state
+	fail_wifi "$result (segunda tentativa)"
+	return 1
+}
+
 bring_up_wifi() {
 	wifi_log "carregando aic8800_bsp e aic8800_fdrv"
-	result=$(load_wifi_modules "$WIFI_MODULE_DIR" "$WIFI_FIRMWARE_DIR" 2>&1) || { fail_wifi "$result"; return 1; }
+	result=$(load_wifi_modules "$WIFI_MODULE_DIR" "$WIFI_FIRMWARE_DIR" 2>&1) || retry_wifi_modules "$result" || return 1
 	iface=$(wait_for_wireless_iface "$WIFI_IFACE_WAIT") || { fail_wifi "nenhuma interface sem fio em $WIFI_IFACE_WAIT s"; return 1; }
 	wifi_log "interface $iface, iniciando o wpa_supplicant"
 	start_wpa_supplicant "$iface" "$WIFI_WPA_CONF" "$WIFI_WPA_LOG" || { fail_wifi "wpa_supplicant não iniciou"; return 1; }

@@ -113,7 +113,7 @@ class WifiMixin:
         out = self.sh("load_wifi_modules /lib/modules/aic8800 /lib/firmware/aic8800")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(self.calls(), [
-            "insmod /lib/modules/aic8800/aic8800_bsp.ko aic_fw_path=/lib/firmware/aic8800 sdio_clock=50000000",
+            "insmod /lib/modules/aic8800/aic8800_bsp.ko aic_fw_path=/lib/firmware/aic8800",
             "insmod /lib/modules/aic8800/aic8800_fdrv.ko"])
 
     def test_stops_and_names_the_module_that_failed(self):
@@ -122,6 +122,82 @@ class WifiMixin:
         self.assertNotEqual(out.returncode, 0)
         self.assertIn("aic8800_bsp", out.stdout)
         self.assertEqual(len(self.calls()), 1)
+
+    # --- religar o chip (WL_REG_ON) ---
+
+    def sdio_tree(self):
+        """sysfs falso: host SDIO na plataforma, driver com bind/unbind e o barramento sdio."""
+        for name in ("devices/fe2c0000.dwmmc", "devices/fe310000.sdhci", "driver", "sdio"):
+            os.makedirs(os.path.join(self.tmp, "sys", name), exist_ok=True)
+        return ('WIFI_PLATFORM_DEVICES="$PWD/sys/devices"; WIFI_SDIO_DRIVER="$PWD/sys/driver"; '
+                'WIFI_SDIO_DEVICES="$PWD/sys/sdio"; ')
+
+    def add_sdio_card(self, name, vendor):
+        self.write(f"sys/sdio/{name}/vendor", vendor + "\n")
+
+    def test_unload_tries_both_modules_and_never_fails(self):
+        self.fake("rmmod", '*) exit 1 ;;')
+        out = self.sh("unload_wifi_modules")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(self.calls(), ["rmmod aic8800_fdrv", "rmmod aic8800_bsp"])
+
+    def test_finds_sdio_host_by_address_with_any_node_name(self):
+        env = self.sdio_tree()
+        self.assertEqual(self.sh(env + "find_sdio_host fe2c0000").stdout, "fe2c0000.dwmmc\n")
+        os.rename(os.path.join(self.tmp, "sys/devices/fe2c0000.dwmmc"), os.path.join(self.tmp, "sys/devices/fe2c0000.mmc"))
+        self.assertEqual(self.sh(env + "find_sdio_host fe2c0000").stdout, "fe2c0000.mmc\n")
+        self.assertNotEqual(self.sh(env + "find_sdio_host fe2b0000").returncode, 0)
+
+    def test_wifi_card_needs_aicsemi_vendor(self):
+        env = self.sdio_tree()
+        self.assertNotEqual(self.sh(env + "has_wifi_card").returncode, 0)
+        self.add_sdio_card("mmc2:0001:1", "0x02d0")
+        self.assertNotEqual(self.sh(env + "has_wifi_card").returncode, 0)
+        self.add_sdio_card("mmc1:390b:1", "0xc8a1")
+        self.assertEqual(self.sh(env + "has_wifi_card").returncode, 0)
+
+    def test_cycle_unbinds_waits_and_binds_the_host(self):
+        env = self.sdio_tree()
+        self.fake("sleep")
+        out = self.sh(env + 'cycle_wifi_chip fe2c0000.dwmmc 2; cat "$WIFI_SDIO_DRIVER/unbind" "$WIFI_SDIO_DRIVER/bind"')
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout, "fe2c0000.dwmmc\nfe2c0000.dwmmc\n")
+        self.assertEqual(self.calls(), ["sleep 2"])
+
+    def test_cycle_reports_failed_unbind_and_does_not_bind(self):
+        env = self.sdio_tree()
+        self.fake("sleep")
+        out = self.sh(env + 'WIFI_SDIO_DRIVER="$PWD/nao-existe"; cycle_wifi_chip fe2c0000.dwmmc 2')
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("unbind", out.stdout)
+        self.assertEqual(self.calls(), [])
+
+    def test_recover_unloads_cycles_and_waits_for_the_card(self):
+        env = self.sdio_tree()
+        self.fake("rmmod")
+        self.fake("sleep")
+        self.add_sdio_card("mmc1:390b:1", "0xc8a1")
+        out = self.sh(env + "recover_wifi_chip")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.calls(), ["rmmod aic8800_fdrv", "rmmod aic8800_bsp", "sleep 2"])
+        self.assertEqual(read_text(os.path.join(self.tmp, "sys/driver/bind")), "fe2c0000.dwmmc\n")
+
+    def test_recover_without_sdio_host(self):
+        env = self.sdio_tree()
+        self.fake("rmmod")
+        shutil.rmtree(os.path.join(self.tmp, "sys/devices/fe2c0000.dwmmc"))
+        out = self.sh(env + "recover_wifi_chip")
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("fe2c0000", out.stdout)
+
+    def test_recover_reports_card_that_did_not_come_back(self):
+        env = self.sdio_tree()
+        self.fake("rmmod")
+        self.fake("sleep")
+        out = self.sh(env + "WIFI_CARD_WAIT=3; recover_wifi_chip")
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("não voltou", out.stdout)
+        self.assertEqual(self.calls().count("sleep 1"), 3)
 
     # --- interface ---
 

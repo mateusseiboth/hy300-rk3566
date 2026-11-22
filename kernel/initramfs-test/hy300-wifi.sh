@@ -31,13 +31,77 @@ read_cmdline_number() {
 	esac
 }
 
-# O Android de fábrica roda o SDIO do Wi-Fi a 50 MHz. O driver pede 150 MHz para o D80, e no
-# kernel ACK isso vale de verdade: o envio do firmware estoura o tempo.
-WIFI_SDIO_CLOCK=50000000
-
 load_wifi_modules() {
-	insmod "$1/aic8800_bsp.ko" "aic_fw_path=$2" "sdio_clock=$WIFI_SDIO_CLOCK" || { echo "insmod aic8800_bsp falhou"; return 1; }
+	insmod "$1/aic8800_bsp.ko" "aic_fw_path=$2" || { echo "insmod aic8800_bsp falhou"; return 1; }
 	insmod "$1/aic8800_fdrv.ko" || { echo "insmod aic8800_fdrv falhou"; return 1; }
+}
+
+unload_wifi_modules() {
+	rmmod aic8800_fdrv 2>/dev/null
+	rmmod aic8800_bsp 2>/dev/null
+	return 0
+}
+
+# Religar o chip sem tirar da tomada. Desligar o host SDIO (unbind do dwmmc) faz o
+# mmc-pwrseq-simple pôr o WL_REG_ON em 0 e cortar o clock de 32 kHz; o bind religa e o núcleo
+# MMC enumera o cartão de novo. O pulso no boot é curto e não destrava um chip que falhou.
+WIFI_SDIO_HOST_ADDR=fe2c0000
+WIFI_SDIO_VENDOR=0xc8a1
+WIFI_PLATFORM_DEVICES=/sys/bus/platform/devices
+WIFI_SDIO_DRIVER=/sys/bus/platform/drivers/dwmmc_rockchip
+WIFI_SDIO_DEVICES=/sys/bus/sdio/devices
+WIFI_POWER_OFF_SECONDS=2
+WIFI_CARD_WAIT=10
+
+# O nome do nó muda entre as árvores (dwmmc@fe2c0000 no ACK, mmc@fe2c0000 no BSP).
+find_sdio_host() {
+	for dev in "$WIFI_PLATFORM_DEVICES/$1".*; do
+		[ -e "$dev" ] || continue
+		basename "$dev"
+		return 0
+	done
+	return 1
+}
+
+has_wifi_card() {
+	for vendor in "$WIFI_SDIO_DEVICES"/*/vendor; do
+		[ "$(cat "$vendor" 2>/dev/null)" = "$WIFI_SDIO_VENDOR" ] && return 0
+	done
+	return 1
+}
+
+wait_for_wifi_card() {
+	remaining=$1
+	while :; do
+		has_wifi_card && return 0
+		[ "$remaining" -gt 0 ] || return 1
+		remaining=$((remaining - 1))
+		sleep 1
+	done
+}
+
+cycle_wifi_chip() {
+	echo "$1" 2>/dev/null >"$WIFI_SDIO_DRIVER/unbind" || { echo "unbind de $1 falhou"; return 1; }
+	sleep "$2"
+	echo "$1" 2>/dev/null >"$WIFI_SDIO_DRIVER/bind" || { echo "bind de $1 falhou"; return 1; }
+}
+
+recover_wifi_chip() {
+	unload_wifi_modules
+	host=$(find_sdio_host "$WIFI_SDIO_HOST_ADDR") || { echo "host SDIO $WIFI_SDIO_HOST_ADDR não encontrado"; return 1; }
+	cycle_wifi_chip "$host" "$WIFI_POWER_OFF_SECONDS" || return 1
+	wait_for_wifi_card "$WIFI_CARD_WAIT" || { echo "o chip não voltou ao barramento SDIO em $WIFI_CARD_WAIT s"; return 1; }
+}
+
+# Estado do host SDIO para o relatório: debugfs do dw_mmc, contagem de interrupções e o
+# WL_REG_ON (GPIO2_B1 = gpio-73, "reset" do mmc-pwrseq).
+dump_sdio_state() {
+	for file in ios regs; do
+		sed "s/^/$file: /" "/sys/kernel/debug/mmc1/$file" 2>/dev/null
+	done
+	grep "$WIFI_SDIO_HOST_ADDR" /proc/interrupts
+	grep "gpio-73 " /sys/kernel/debug/gpio 2>/dev/null
+	return 0
 }
 
 find_wireless_iface() {
