@@ -24,8 +24,12 @@ Documento para outro agente/pessoa continuar de onde paramos. Leia também `READ
 
 | Caminho | Conteúdo |
 |---|---|
-| `~/hy300-backup/` | backup completo das partições (boot, recovery, super.img.gz, dtbo…) + SHA256SUMS |
+| `~/hy300-backup/` | backup de fábrica das partições (boot, recovery, super.img.gz, dtbo, misc…) + SHA256SUMS |
+| `~/hy300-backup/estado-20261122/` | backup incremental do estado de 22/11 (`scripts/backup-state.sh`): partições que mudaram (boot com a splash, cust, metadata), overlay do remount, props persistentes, estado do sistema e apps de usuário com dados. Contém senhas de Wi-Fi: nunca vai para o repo |
+| `~/hy300-backup/recovery-gravadas.txt` | hashes das imagens que o `flash-test-recovery.sh` já gravou na recovery |
 | `~/hy300-work/` | material bruto: jadx, system/vendor extraídos, kernel/ (norms, dmesg bruto), tools/dtc (dtc 1.8.1 compilado) |
+| `~/hy300-work/toolchain/` | Linaro GCC 6.3.1 2017.05 (cópia da Rockchip no GitHub, `rockchip-android/gcc-linaro-6.3.1-2017.05-x86_64_aarch64-linux-gnu`), idêntica à do kernel de fábrica |
+| `~/hy300-work/marco0/recovery-marco0.img` | recovery de fábrica com `hy300.test=marco0` no cmdline (18 bytes diferentes), pronta para o teste do marco 0 |
 | `~/hy300-work/display-antes-1024x600.txt` | snapshot de props de display antes do teste de 1024×600 (antigo) |
 
 ## Estado atual do aparelho
@@ -46,6 +50,11 @@ Documento para outro agente/pessoa continuar de onde paramos. Leia também `READ
   `persist.txcz.tt.enable=0`; atalho F12 ligado. Como reverter: `android/hy300-settings/README.md`, seção "Compilar e instalar".
 - Painel físico é 1024×600, mas o HWC ignora `persist.vendor.framebuffer.main`. O teste de
   renderizar em 1024×600 foi revertido (`docs/debloat.md`).
+- **Media Center da Rockchip (`com.rockchips.mediacenter`) e toofifi (`com.android.toofifi`, espelhamento da TXCZ)
+  removidos** pelo overlay (`scripts/remove-mediacenter-toofifi.sh`, reverter com `restore-mediacenter-toofifi.sh`).
+  Os dois rodavam com `android.uid.system`; o Media Center tinha INSTALL/DELETE_PACKAGES, MASTER_CLEAR, READ_LOGS, DLNA e subia no boot.
+  No lugar: VLC 3.7.1 armeabi-v7a (site oficial, SHA-256 e assinatura VideoLAN conferidos) e AirScreen (instalado pelo usuário pela Aurora;
+  AirPlay, Google Cast e DLNA). O Miracast de fábrica se perdeu: receptor Miracast exige privilégio de sistema. O usuário aceitou.
 
 ## Frentes em andamento
 
@@ -70,7 +79,7 @@ Commitado (o README do app tem a tabela de estado com [testado]/[não testado] e
 ### 2. Kernel — `git@github.com:mateusseiboth/kernel-hy300-rk3566.git`
 
 - O repositório é um fork do `rockchip-linux/kernel` com todos os branches. Clone local em
-  `~/kernel-hy300-rk3566` (só o branch `develop-4.19`, mais o branch nosso `hy300`).
+  `~/hy300-handoff/kernel-hy300-rk3566` (branches `develop-4.19` e `hy300`; o `develop-6.1` é buscado sob demanda).
 - Commit `46d22e0` no branch `hy300`: `arch/arm64/boot/dts/rockchip/rk3566-hy300.dts`
   (inclui `rk3566-box-demo-v10.dts`) + `rk3566-hy300-overrides.dtsi` (gerado), já no Makefile.
   O DTB compilado é **estruturalmente idêntico** ao de fábrica (verificado com `tools/dtnorm.py`).
@@ -81,27 +90,32 @@ Commitado (o README do app tem a tabela de estado com [testado]/[não testado] e
   python dtnorm.py x.dtb > x.norm   # (precisa de pip fdt; venv em /tmp foi temporário)
   python3 dtoverride.py base.norm alvo.norm > overrides.dtsi
   ```
-- **Próximos passos do marco 0** (kernel 4.19 reproduzindo o de fábrica, só para validar o fluxo):
-  1. Toolchain: o de fábrica usou **Linaro GCC 6.3.1 2017.05** (aarch64-linux-gnu).
-     `releases.linaro.org` foi desativado, e o `snapshots.linaro.org`/S3 devolvem HTML ou 403.
-     Achar um espelho (ex.: prebuilts do SDK da Rockchip no GitHub) ou usar outro GCC aarch64
-     (depois verificar o vermagic dos módulos do vendor: `kernel/vendor-modules.txt`).
-  2. `arch/arm64/configs/rk3566_hy300_defconfig` a partir de `hy300-rk3566/kernel/config-4.19.232-txcz`
-     (`make ARCH=arm64 savedefconfig`, que precisa do cross-compiler). Ligar `CONFIG_KEXEC`.
-  3. Script para montar o `boot.img` (header v2, page 2048): kernel novo + ramdisk de fábrica +
-     `second`=resource.img com o DTB. Ver `tools/rk_resource.py` e `tools/make_splash.py`
-     (`boot_parts`/`calc_id` sabem calcular o SHA1 do header).
-  4. **Slot de teste = partição `recovery`:** gravar a imagem de teste na `recovery`
-     (o backup está em `~/hy300-backup/recovery.img`) e rodar `adb reboot recovery`.
-     Se travar, tirar da tomada: o boot normal segue pela `boot`. O log fica em
-     `/sys/fs/pstore/console-ramoops-0` (ramoops já ativo).
-     **ANTES** do primeiro kernel nosso, validar com a recovery de fábrica se o U-Boot grava
-     "boot-recovery" na `misc` nesse caminho (risco de loop de boot). Para isso, comparar dumps
-     da `misc` antes e depois.
-- **Marcos seguintes** (decididos com o usuário): marco 1 = BSP `develop-6.1`/`6.6` bootando com
-  o DT portado. Marco 2 = userspace novo (port do LineageOS com vendor 64 bits; o alvo é
-  Android 17). Riscos: keystone (`librkgfx_dc.so`, proprietária e 32 bits), PQ (`libpq`) e
-  HAL do RK628. U-Boot: só refazer se for necessário (sem SD, sem serial, MaskROM só pela OTG).
+- **O 4.19 foi abandonado (decisão de 22/11).** O kernel de fábrica vem do SDK **Android 12** da Rockchip
+  (4.19.232 com `DMABUF_HEAPS`, `MPP_VDPP`, `RGA_ASYNC`, RK628) mais drivers da TXCZ (AIC8800, SeekWave, QMI8658).
+  Essa variante não é pública: o `develop-4.19` (congelado em 2022-08) e as cópias achadas no GitHub são do SDK Linux.
+  Compilado dali com a config de fábrica, somem 25 opções, e com `MODVERSIONS=y` os módulos do vendor (Wi-Fi incluso)
+  não carregariam. Como o objetivo é o Android novo, o marco 0 valida só o fluxo, usando a própria `Image` de fábrica.
+- **U-Boot de fábrica** (`U-Boot 2017.09-gf21494d #txcz`, strings do `uboot.img`): tem código de `vendor bootconfig`
+  (header v4), então deve aceitar boot.img v3/v4 e `vendor_boot` sem troca. Decide a recovery por cmd/env/tecla/**misc**/usb.
+  Fastboot existe (USB e UDP), mas sem porta OTG e sem rede cabeada não serve. U-Boot novo (boot pela USB-A) só em falha
+  catastrófica, depois de todo teste possível, e só é gravável enquanto o aparelho ainda boota por algum caminho.
+- **Marco 0 (validar o fluxo de teste): pronto, falta executar com o usuário presente** (ele precisa do controle):
+  - `tools/mkboot.py` monta/desmonta boot.img v2; `tests/test_mkboot.py` (12 testes, `python3 -m unittest discover -s tests`)
+    remonta `boot.img` e `recovery.img` de fábrica idênticos byte a byte. As imagens não têm footer AVB.
+  - Teste: `scripts/flash-test-recovery.sh ~/hy300-work/marco0/recovery-marco0.img` → `adb reboot recovery` → o usuário
+    escolhe "Reboot system now" (reboot quente, sem tirar da tomada) → `scripts/check-test-boot.sh hy300.test=marco0`
+    (marca no pstore, argumentos da recovery no `/cache/recovery/last_log`, hash da `misc`) →
+    `scripts/flash-test-recovery.sh ~/hy300-backup/recovery.img` para voltar.
+  - A recovery de fábrica roda inteira nesse teste e limpa a `misc` ao sair: sem risco de loop.
+- **Marco 1 (em andamento):** `develop-6.1` com o DT do HY300 portado, initramfs de teste que limpa a `misc` (só se tiver
+  `boot-recovery`), registra um relatório no pstore e reinicia sozinho em ~20 s. Detalhes em `docs/kernel-6.1.md`.
+- **Marco 2:** vendor 64 bits + LineageOS (o branch mais novo disponível; Android 17 quando o Lineage chegar lá).
+  Base possível: GloDroid (mainline, Mesa/Panfrost, já roda em placas RK3566) ou árvores LineageOS de outros RK356x (BSP + blobs 64 bits).
+  Trabalho próprio: keystone (hoje no SurfaceFlinger com `librkgfx_dc.so`, fechada e 32 bits; reimplementar como passo final de
+  composição), HDMI-in (RK628), driver do motor de foco (reescrito a partir da RE, **mantendo `/sys/class/motor_cc`** para o app
+  continuar funcionando), Wi-Fi AIC8800 (driver aberto, portar), QMI8658.
+  Risco: sem fastboot por USB, a `super` nova terá de ser gravada de dentro do aparelho; ela só é tocada quando o sistema novo
+  já bootar pelo slot `recovery`.
 
 ### 3. Pendências menores
 
@@ -109,4 +123,3 @@ Commitado (o README do app tem a tabela de estado com [testado]/[não testado] e
 - Áudio do HDMI-in: falta o serviço `com.rockchip.rkhdmiinaudio` (`docs/hdmi-audio.md`).
 - Renderização nativa 1024×600: investigar `persist.vendor.resolution.*` no HWC.
 - Bloquear domínios de telemetria no hosts (`reverse-engineering/telemetria/README.md`).
-- `com.android.toofifi` (espelhamento): a parte de rede não foi analisada.

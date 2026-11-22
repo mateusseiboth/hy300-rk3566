@@ -14,10 +14,10 @@ Objetivos:
 - [x] Splash do U-Boot customizável (`docs/splash.md`)
 - [x] Animação de boot com log ao vivo (`android/bootlog`)
   - [ ] versão nativa C++ (log desde ~6 s, boot mais rápido) — ver `android/bootlog/README.md`
-- [ ] Engenharia reversa do app de configurações da TXCZ (keystone, espelhamento, foco, fontes)
-- [ ] App de configuração próprio integrado às Configurações do Android
+- [x] Engenharia reversa do app de configurações da TXCZ (keystone, espelhamento, foco, fontes): `reverse-engineering/MAP.md`
+- [x] App de configuração próprio integrado às Configurações do Android (`android/hy300-settings`)
 - [ ] Áudio da entrada HDMI (RK628)
-- [ ] Avaliar Android mais novo (GSI `arm32_binder64` / LineageOS)
+- [ ] Android mais novo: kernel 6.x (marco 1) e LineageOS com vendor 64 bits (marco 2), ver `docs/HANDOFF.md`
 - [ ] (futuro) Linux mainline
 
 ## Identificação
