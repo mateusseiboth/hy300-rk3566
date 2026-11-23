@@ -6,6 +6,15 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <!-- Motor de foco no LineageOS: o nó /sys/class/motor_cc/motor_cc/motor é
+         system:vendor_hy300_motor 0660, e quem tem esta permissão roda com esse gid
+         (hy300-focus-motor.xml da árvore do aparelho). Na ROM de fábrica o nó é 0777 e a
+         permissão não muda nada. -->
+    <permission
+        android:name="io.github.hy300.settings.permission.FOCUS_MOTOR"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="io.github.hy300.settings.permission.FOCUS_MOTOR" />
+
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Só para ligar o serviço de acessibilidade da tecla F12 pelo próprio app.

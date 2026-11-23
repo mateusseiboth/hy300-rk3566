@@ -60,5 +60,17 @@ class ManifestTest(unittest.TestCase):
         self.assertIn("pm enable io.github.hy300.settings/.AndroidSettingsActivity", script)
 
 
+    def test_focus_motor_permission_is_signature_and_requested(self):
+        # O nó do motor é system:vendor_hy300_motor 0660 no LineageOS; o gid vem desta permissão
+        # (product/etc/permissions/hy300-focus-motor.xml na árvore do aparelho).
+        root = ET.parse(MANIFEST).getroot()
+        name = "io.github.hy300.settings.permission.FOCUS_MOTOR"
+        declared = {p.get(f"{ANDROID}name"): p.get(f"{ANDROID}protectionLevel")
+                    for p in root.findall("permission")}
+        self.assertEqual(declared.get(name), "signature")
+        used = [p.get(f"{ANDROID}name") for p in root.findall("uses-permission")]
+        self.assertIn(name, used)
+
+
 if __name__ == "__main__":
     unittest.main()

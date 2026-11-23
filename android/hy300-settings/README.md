@@ -116,7 +116,7 @@ A chave debug é a de `~/.android/debug.keystore` de quem compila. Um APK assina
 
 **App comum (uid de app, `/data`) + `setprop` por `ProcessBuilder`.** Verificado logo no início com um APK mínimo:
 o `setprop` de um `untrusted_app` grava `persist.*` (o audit mostra `avc: denied { set } ... permissive=1`, mas o valor é gravado).
-Os nós do motor são 0777 (DAC ok, SELinux permissive). Leitura: um único `getprop` com parse da saída, para não usar API oculta.
+Os nós do motor são 0777 na ROM de fábrica (DAC ok, SELinux permissive). No LineageOS o `motor` é `system:vendor_hy300_motor` 0660 e o app entra no grupo pela permissão de assinatura `io.github.hy300.settings.permission.FOCUS_MOTOR` que ele mesmo declara (o mapa permissão para gid e o tipo `sysfs_hy300_motor` da sepolicy ficam na árvore do aparelho). Leitura: um único `getprop` com parse da saída, para não usar API oculta.
 
 Por quê: dispensa assinatura de plataforma (não temos a release-key) e `sharedUserId=system`. Instala e atualiza com `adb install`.
 **Fragilidade:** depende do SELinux em permissive. Se algum dia ficar enforcing, as alternativas são:
