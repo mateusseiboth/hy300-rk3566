@@ -16,6 +16,8 @@ Saída em <out>:
     lib/firmware/aic8800/        firmware do AIC8800D80, conferido por MD5
 
 Uso: wifi_payload.py build --credentials ARQ --vendor-img vendor.img --out DIR
+     wifi_payload.py firmware --vendor-img vendor.img --out DIR   (só o firmware, direto em DIR:
+                                                                  o prebuilt do LineageOS)
 """
 import argparse
 import hashlib
@@ -183,14 +185,29 @@ def main(argv):
     build.add_argument("--credentials", required=True)
     build.add_argument("--vendor-img", required=True)
     build.add_argument("--out", required=True)
+    build.set_defaults(run=run_build)
+    firmware = sub.add_parser("firmware")
+    firmware.add_argument("--vendor-img", required=True)
+    firmware.add_argument("--out", required=True)
+    firmware.set_defaults(run=run_firmware)
     args = parser.parse_args(argv)
     try:
-        build_payload(args.credentials, args.vendor_img, args.out)
+        message = args.run(args)
     except PayloadError as error:
         print(f"wifi_payload: {error}", file=sys.stderr)
         return 1
-    print(f"ok {args.out}: wpa_supplicant.conf, hy300-wifi.conf e {len(FIRMWARE_D80)} arquivos de firmware")
+    print(f"ok {args.out}: {message}")
     return 0
+
+
+def run_build(args):
+    build_payload(args.credentials, args.vendor_img, args.out)
+    return f"wpa_supplicant.conf, hy300-wifi.conf e {len(FIRMWARE_D80)} arquivos de firmware"
+
+
+def run_firmware(args):
+    extract_firmware(args.vendor_img, args.out)
+    return f"{len(FIRMWARE_D80)} arquivos de firmware"
 
 
 if __name__ == "__main__":

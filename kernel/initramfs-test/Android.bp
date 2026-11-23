@@ -1,0 +1,13 @@
+//
+// SPDX-FileCopyrightText: 2026 Mateus Seiboth
+// SPDX-License-Identifier: Apache-2.0
+//
+// LineageOS 24 do HY300 (este repositório entra em vendor/hy300/hy300-rk3566): as funções do
+// Wi-Fi AIC8800 do initramfs de teste (carregar os módulos, religar o chip pelo WL_REG_ON,
+// estado do SDIO) também servem ao hy300-diag da árvore do aparelho, que as lê daqui.
+prebuilt_etc {
+    name: "hy300-wifi.sh",
+    src: "hy300-wifi.sh",
+    sub_dir: "hy300",
+    vendor: true,
+}

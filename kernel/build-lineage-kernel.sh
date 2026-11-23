@@ -5,14 +5,17 @@
 # checkout do kernel, que outro trabalho usa), confere os requisitos de config do Android
 # (FCM 8) e instala na árvore: prebuilt/Image.gz (DT do HY300 embutido), prebuilt/dtb/,
 # prebuilt/resource.img (de FÁBRICA, tirado do boot.img do aparelho), prebuilt/modules/*.ko
-# (GPU: Panfrost e dependências) e prebuilt/VERSION. Nada disso vai para o git.
+# (GPU: Panfrost e dependências; Wi-Fi: aic8800_bsp e aic8800_fdrv), prebuilt/VERSION e, se o
+# vendor.img de fábrica existir, prebuilt/firmware/aic8800 (firmware da AICSemi, conferido por
+# MD5 pelo tools/wifi_payload.py). Nada disso vai para o git.
 #
 # Uso: kernel/build-lineage-kernel.sh [árvore_do_aparelho]
 #   padrão: ~/android/lineage/device/txcz/hy300
 # Variáveis: KREF (padrão hy300-ack-6.1), KSRC_GIT (padrão ~/hy300-handoff/kernel-hy300-rk3566),
 #            LKWORK (padrão ~/hy300-work/lineage-kernel), FACTORY (padrão ~/hy300-backup),
 #            KCONFIG_REQS (padrão ~/android/lineage/kernel/configs/u/android-6.1),
-#            LK_MODULES (padrão "drm_shmem_helper gpu-sched panfrost"), JOBS (padrão 12).
+#            LK_MODULES (padrão "drm_shmem_helper gpu-sched panfrost aic8800_bsp aic8800_fdrv"),
+#            VENDOR_IMG (padrão ~/hy300-work/vendor.img), JOBS (padrão 12).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,7 +29,8 @@ KSRC_GIT="${KSRC_GIT:-$HOME/hy300-handoff/kernel-hy300-rk3566}"
 LKWORK="${LKWORK:-$HOME/hy300-work/lineage-kernel}"
 FACTORY="${FACTORY:-$HOME/hy300-backup}"
 KCONFIG_REQS="${KCONFIG_REQS:-$HOME/android/lineage/kernel/configs/u/android-6.1}"
-read -r -a LK_MODULES <<<"${LK_MODULES:-drm_shmem_helper gpu-sched panfrost}"
+read -r -a LK_MODULES <<<"${LK_MODULES:-drm_shmem_helper gpu-sched panfrost aic8800_bsp aic8800_fdrv}"
+VENDOR_IMG="${VENDOR_IMG:-$HOME/hy300-work/vendor.img}"
 JOBS="${JOBS:-12}"
 DTB_NAME=rk3566-hy300.dtb
 
@@ -74,6 +78,13 @@ install_prebuilts() {
 		--out "$DEVICE_TREE/prebuilt" --kernel-ref "$KREF $COMMIT" --modules-dir "$MODULES_DIR"
 }
 
+install_wifi_firmware() {
+	local dest="$DEVICE_TREE/prebuilt/firmware/aic8800"
+	[[ -f "$VENDOR_IMG" ]] || { echo ">> firmware do Wi-Fi: pulado (sem $VENDOR_IMG)"; return 0; }
+	rm -rf "$dest"
+	python3 -I "$REPO/tools/wifi_payload.py" firmware --vendor-img "$VENDOR_IMG" --out "$dest"
+}
+
 main() {
 	use_kbase_toolchain || exit 1
 	export_source
@@ -81,6 +92,7 @@ main() {
 	build_kernel
 	collect_modules
 	install_prebuilts
+	install_wifi_firmware
 	cat "$DEVICE_TREE/prebuilt/VERSION"
 }
 

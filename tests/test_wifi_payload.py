@@ -239,6 +239,22 @@ class BuildTest(unittest.TestCase):
         self.assertIn(self.creds, out.stderr)
         self.assertNotIn("Traceback", out.stderr)
 
+    def test_cli_firmware_only_needs_the_vendor_image(self):
+        # LineageOS: só o firmware, sem credenciais (o teste do driver não conecta).
+        out = subprocess.run([sys.executable, "-I", os.path.join(TOOLS, "wifi_payload.py"), "firmware",
+                              "--vendor-img", os.path.join(self.out, "nao-existe.img"), "--out", self.out],
+                             capture_output=True, text=True)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("nao-existe.img não existe", out.stderr)
+        self.assertNotIn("Traceback", out.stderr)
+
+    def test_firmware_only_payload_has_no_network_files(self):
+        firmware = {"a.bin": hashlib.md5(b"x").hexdigest()}
+        dest = os.path.join(self.out, "fw")
+        wifi_payload.extract_firmware("vendor.img", dest, firmware, dump=self.fake_dump)
+        self.assertEqual(os.listdir(dest), ["a.bin"])
+        self.assertFalse(os.path.exists(os.path.join(self.out, "etc")))
+
 
 if __name__ == "__main__":
     unittest.main()
