@@ -435,6 +435,97 @@ obrigatórios declarados":
 | `super.img` (sparse) | 1.407.674.332 | `6bbfecae478458803115029f955255017399d074b7a8d04bcf79492fc1189fe0` |
 | `super.raw` (vai na `super`) | 3.263.168.512 | `ae71da3fee397fa82c14da5faa37c7c3da0a42cd352c848c4d63f9aac81dbdf8` |
 
+### Rodada 5: áudio, Wi-Fi do Android e adb pela rede (23/11/2026)
+
+Boot 3 (rodada 4, `gpu=panfrost`): sem tempestade de IRQ ("GPIO Key Home" = 0), Panfrost sem
+timeout (373 IRQs de job), shutdown rápido (pedido aos 489 s, Alpine de volta em 544 s), Wi-Fi
+AIC8800 no ACK com scan de 13 redes, bootlog inteiro. Sobrou o system_server morto 2 vezes pelo
+Watchdog em `AudioSystem.setLowRamDevice` ← `AudioService.<init>`.
+
+- **Áudio**: o processo do HAL (`vendor.audio-hal-aidl`) rodava, mas o `main.cpp` do exemplo do
+  AOSP registra um `IModule` para cada módulo do `audio_policy_configuration.xml`
+  (`AudioPolicyConfigXmlConverter`, "primary" vira "default"), e o arquivo não existia: só o
+  `IConfig` subia, e o audioserver esperou o `IModule/default` para sempre. Além disso nenhum `.rc`
+  declarava `interface aidl ...IModule/default`, e o init não sabia a quem pedir o serviço
+  (`ctl.interface_start`). Correções:
+  - `configs/audio/audio_policy_configuration.xml` + `hy300_primary_audio_policy_configuration.xml`
+    (só o alto-falante, 48 kHz estéreo) no `/vendor/etc`, com o `r_submix`, os volumes e o
+    surround do AOSP (`aosp_*.xml`);
+  - patch `hardware/interfaces/0001`: `interface aidl` nos `.rc` de áudio (core: `IConfig`,
+    `IModule/default`, `IModule/r_submix`; efeitos: `IFactory`), gatekeeper, health, keymint e
+    power; o APEX de áudio deixa de declarar o módulo `bluetooth` e o provedor de áudio Bluetooth
+    (sem Bluetooth, ninguém os registraria). Patches `external/minigbm/0001` (allocator) e
+    `hardware/rockchip/codec2/0003` (Codec2, HIDL) com o mesmo.
+- **Checagem nova** (`tools/check_vintf_hals.py`): todo HAL AIDL/HIDL declarado no VINTF (vendor,
+  odm, APEX de vendor) precisa de um `.rc` com a `interface` correspondente. Na imagem da rodada 4
+  ela acusa 16 instâncias, entre elas `IModule/default`; nesta passa. Um teste novo também confere
+  que todo patch da árvore é um diff de verdade (o da librga tinha sido gravado com o resumo de um
+  wrapper do git no lugar do diff; regravado).
+- **Wi-Fi do Android**: `android.hardware.wifi.xml` (FEATURE_WIFI), `wpa_supplicant` AIDL do AOSP
+  (nl80211) com `/vendor/etc/wifi/wpa_supplicant.conf`, `wificond` do sistema e
+  `wifi.interface=wlan0`. **Sem HAL Wi-Fi do fabricante**: o framework funciona sem ela
+  (`WifiNative.java`: `handleIfaceCreationWhenVendorHalNotSupported` devolve `wifi.interface`
+  quando `isVendorHalSupported()` é falso), e o HAL AIDL padrão do AOSP só sobe com uma
+  `libwifi-hal` de fabricante (a `libwifi-hal-fallback` devolve `WIFI_ERROR_NOT_SUPPORTED`). Os
+  módulos sobem no `boot` pelo `hy300-wifi-modules` (em segundo plano, ~40 s), com as funções do
+  `kernel/initramfs-test/hy300-wifi.sh`; firmware só no build local. O diag não faz mais scan
+  próprio (brigaria com o supplicant): só registra o estado, e carrega os módulos ele mesmo se a
+  interface não aparecer em 60 s.
+- **Rede e adb pela rede** (`configs/init/hy300-net.sh`, só userdebug, depois do
+  `boot_completed`): instala a chave do PC em `/data/misc/adb/adb_keys` (sem duplicar,
+  `system:shell 0640`), liga `adb_enabled`, `service.adb.tcp.port=5555` e reinicia o adbd (a
+  autenticação continua ligada), liga o Wi-Fi e conecta com `cmd wifi connect-network` (salva a
+  rede), e apaga o `wifi.conf`. IP por **DHCP** (o `cmd wifi` não tem IP fixo; para 20.0.0.190,
+  reserva no roteador). Log em `/metadata/hy300-diag/net.txt`, sem a senha.
+- **Retorno ao Alpine**: aos 480 s o diag só reinicia se o adb pela rede **não** estiver de pé
+  (`init.svc.adbd=running`, `service.adb.tcp.port=5555` e IPv4 no `wlan0`); se estiver, registra
+  "adb pela rede no ar: sem reinício automático" e segue gravando os logs.
+
+Ordem no boot: `post-fs` → `hy300-diag` (logs) · `boot` → `hy300-wifi-modules` (wlan0 ~40 s) ·
+`boot_completed` → `hy300-net` (adb pela rede, Wi-Fi, apaga o `wifi.conf`) · 480 s → diag:
+adb no ar fica; senão marca de ficar + reboot para o Alpine.
+
+**O que o Alpine grava no `/metadata` antes do boot** (o metadata não é mais zerado; só o
+userdata, quando pedido; nesse caso apague também `/mnt/metadata/vold`, que guarda o estado do
+checkpoint do `/data` antigo, e deixe o `hy300-diag`):
+
+```sh
+mkdir -p /mnt/metadata
+mount -t ext4 /dev/block/by-name/metadata /mnt/metadata      # com escrita
+mkdir -p /mnt/metadata/hy300-diag
+umask 077
+cat > /mnt/metadata/hy300-diag/wifi.conf <<'CONF'
+WIFI_SSID=<nome da rede>
+WIFI_PSK=<senha>
+WIFI_SECURITY=wpa2
+CONF
+chmod 600 /mnt/metadata/hy300-diag/wifi.conf
+# chave pública do PC (cat ~/.android/adbkey.pub no PC), por exemplo:
+#   scp ~/.android/adbkey.pub root@<IP do Alpine>:/mnt/metadata/hy300-diag/adb_keys
+chmod 644 /mnt/metadata/hy300-diag/adb_keys
+sync; umount /mnt/metadata
+hy300-android
+```
+
+Artefatos da rodada 5 em `~/hy300-work/lineage-artifacts/` (rodada 4 em `r4/`), kernel
+`1ee24ab83ac1`; `verify-boot` passa nos três boot.img; `check_vintf_hals.py`: "11 HALs
+obrigatórios declarados; todo HAL declarado tem serviço no init". O `boot.img` é idêntico ao da
+rodada 4 (kernel e ramdisk iguais); o que mudou está na `super`.
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` (`gpu=panfrost`, vai na `recovery`) | 19.888.128 | `a122e5154d4249ba2c7facebb4ed0f14e10ed8899f55d3a1c779aa4e45105735` |
+| `boot-sw.img` (`gpu=sw`, reserva) | 19.888.128 | `084c78c5ff184f2538509700afa46b19da7d05aca545786616e44c7a3e7a9d0d` |
+| `recovery.img` | 32.614.400 | `54cffba5570ffef49f75c38ce095b432a97b52edf640c93cf9d9e49a5eef8542` |
+| `super.img` (sparse) | 1.413.367.800 | `c84ae8b79dc5b828ebd3ab5db972416f220e016fd8345a8c5933f14743213bb4` |
+| `super.raw` (vai na `super`) | 3.263.168.512 | `49444ff5ea317ffa0b9f5458ec242d1c8b74db9d9dfe1ca641f86e292f1dabd6` |
+
+Formato do `wifi.conf`: uma chave por linha, `CHAVE=valor`, o valor é tudo depois do primeiro `=`
+(espaços valem); `WIFI_SECURITY` é `wpa2` (padrão), `wpa3` ou `open`; linhas com `#` e chaves
+desconhecidas são ignoradas; o arquivo não é executado e é recusado se não tiver modo 600 (ou
+400). No PC, depois do boot: `adb connect <IP>:5555` (o IP sai do DHCP; está no `net.txt` do
+próximo diag ou no roteador).
+
 ### Gravar pelo Alpine
 
 O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com
