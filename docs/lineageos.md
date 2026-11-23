@@ -1122,6 +1122,81 @@ alto-falante; áudio do HDMI com o app HDMI aberto; `dumpsys bluetooth_manager` 
 endereço; `rfkill` do `bluetooth` com `soft=0`; parear um controle; nenhuma negação `module_load`;
 Aurora Store no launcher.
 
+### Rodada 12: adb root, ClearKey e encoder sem lock (23/11/2026)
+
+O boot 8 (rodada 11) confirmou as placas de som certas (0 = alto-falante, 1 = `rockchiphdmiin`),
+áudio escrevendo no card 0 sem erro, Bluetooth `ON` e a Aurora presente. O alto-falante físico
+ainda não foi ouvido.
+
+**adb root e adb remount.** O `vendor/lineage/config/common.mk` liga
+`PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG` (fora do `WITH_ADB_INSECURE`), e o userdebug saía com
+`ro.debuggable=0`. É variável de valor único do produto: o produto de topo não a desfaz (vazio herda
+o valor de cima, e `false` vira verdadeiro no `add_json_bool` do `soong_extra_config.mk`). O patch
+`vendor/lineage/0001` faz o `common.mk` respeitar `TARGET_USERDEBUG_DEBUGGABLE`, que o
+`lineage_hy300.mk` liga. O build sai com `ro.debuggable=1`, `ro.secure=1` e `ro.adb.secure=1` (a
+chave do adb continua exigida). O `boot.img` não mudou (o `ro.debuggable` fica no `build.prop` do
+system).
+
+Remount: o kernel tem `CONFIG_OVERLAY_FS`, `CONFIG_DM_SNAPSHOT`, `CONFIG_DM_USER` e loop; não há AVB
+(`verifiedbootstate=orange`); as partições são lógicas na `super` (3,26 GB, ~1,9 GB usados) e o
+`/metadata` monta no primeiro estágio. Passos, com o Lineage no ar:
+
+```bash
+adb root
+adb remount          # na primeira vez cria o "scratch" e pede reboot
+adb reboot           # reboot normal: o U-Boot sobe o Alpine; voltar com hy300-android
+adb root && adb remount   # agora /system, /vendor, /product... ficam graváveis por overlayfs
+```
+
+O scratch do overlayfs fica no espaço livre da `super` (ou, sem espaço, num arquivo no `/data`
+pelo `gsid`); `adb enable-verity` desfaz. **Atenção ao reboot**: o `adb reboot` cai no autoboot do
+Alpine, que volta ao Lineage em 5 s; para ficar no Alpine, `adb shell setprop debug.hy300.alpine 1`.
+Não testado no aparelho. Na imagem de uso o perfil continua decidindo se o adb liga.
+
+**ClearKey (YouTube para TV fechava).** O app (Cobalt) chama
+`MediaDrm.isCryptoSchemeSupported(Widevine)` e recebia `IllegalArgumentException: Failed to query
+crypto scheme support`. No código: sem nenhum `IDrmFactory`, `DrmHalAidl` e `DrmHalHidl` ficam com
+`mInitCheck = ERROR_UNSUPPORTED` (`mFactories.size() == 0`), `DrmHal::initCheck()` devolve isso,
+`DrmUtils::MakeObject()` devolve nulo e o `JDrm::IsCryptoSchemeSupported` dá `BAD_VALUE`, que o JNI
+vira exceção. Com um `IDrmFactory`, o `initCheck` é `NO_INIT`, o `MakeDrm` funciona e
+`DrmHalAidl::isCryptoSchemeSupported` percorre as fábricas, não acha o UUID do Widevine e devolve
+`false` com `OK`. Entrou o `android.hardware.drm-service-lazy.clearkey` (AOSP, sob demanda, com
+`interface aidl android.hardware.drm.IDrmFactory/clearkey` e o fragmento VINTF), e o
+`required_hals.txt` passou a exigir o `IDrmFactory/clearkey`. Widevine continua fora; ele entra na
+rodada 13.
+
+**Encoder por Surface preto** (scrcpy com `c2.rk.avc.encoder`, boot 8): `Gralloc5: lock(...) failed:
+3`, `C2AllocatorGralloc: failed transaction: lock(RGBA_8888)`, `C2RKMpiEnc: failed to
+mapInputBuffer with err 14`. O buffer RGBA da Surface de entrada (display virtual) vem do minigbm
+sem uso de CPU, e o encoder mapeava o bloco pela CPU só para saber o layout e para o dump. O MPP
+(RGBA direto no VEPU540, `hasRkVenc`) e a RGA já recebem o fd do dma-buf. Patch `codec2/0006`: com
+o gralloc genérico não há lock; o layout vem do formato HAL do handle (`C2RKGenericInput.h`:
+RGBA/RGBX/BGRA/IMPLEMENTATION_DEFINED são RGBA, YCBCR_420_888/NV12 são YUV), e o dump de quadros de
+entrada fica de fora. Teste no host (`tools/tests/test_codec2_encoder_input.py`, gtest tirado do
+patch) com o caso do boot 8: entrada RGBA sem CPU nunca mapeia.
+
+Conferências: `check_audio_policy.py`, `check_sepolicy.py`, `check_vintf_hals.py` ("12 HALs
+obrigatórios declarados; todo HAL declarado tem serviço no init"), `verify-boot` nos quatro
+boot.img, 190 testes da árvore, nenhuma priv-app fora do allowlist. Árvore `d702fa3`, kernel
+`acf8a8518737`.
+
+Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 11 em `r11/`). **Só a `super` mudou** (e o
+`recovery.img`, que não se grava): os boot.img são os da rodada 11.
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` | 19.892.224 | `3f27d6f43a026374bf274ea6a59a8e885db5d83630c3b7978d45e595d295aab0` |
+| `boot-uso.img` | 19.892.224 | `49b0567f7f172a9435d4a4c86968346f5b18058484213779b5a6840f799ab8b5` |
+| `boot-sw.img` | 19.892.224 | `4756c318c876924c01f5de5a34d1292871564d3d628b7184db026155fac2a271` |
+| `recovery.img` | 32.624.640 | `9dedf36d4c6872640ccb5f8cfb70097cf4a8ba71ea0a37ec3f8faa9a2310b156` |
+| `super.img` (sparse) | 1.886.421.084 | `857116e574e2293f867bb8836b8d7dc3ba9dd9a355b2a0e150bd019e24d3c59d` |
+| `super.raw` | 3.263.168.512 | `276bf514b89948f1e5105fe09a839200b06e7d491b769f2ebce24281849b8e37` |
+
+A conferir no aparelho: `getprop ro.debuggable` = 1 e `adb root`; `adb remount` (e o reboot);
+YouTube para TV abre e toca vídeo sem DRM; `lshal`/`service list` com o `IDrmFactory/clearkey`
+subindo sob demanda; scrcpy com `--video-encoder=c2.rk.avc.encoder` mostra a tela, sem
+"mapInputBuffer" no logcat.
+
 ### Gravar pelo Alpine
 
 O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com
