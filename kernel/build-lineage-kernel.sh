@@ -14,7 +14,7 @@
 # Variáveis: KREF (padrão hy300-ack-6.1), KSRC_GIT (padrão ~/hy300-handoff/kernel-hy300-rk3566),
 #            LKWORK (padrão ~/hy300-work/lineage-kernel), FACTORY (padrão ~/hy300-backup),
 #            KCONFIG_REQS (padrão ~/android/lineage/kernel/configs/u/android-6.1),
-#            LK_MODULES (padrão "drm_shmem_helper gpu-sched panfrost aic8800_bsp aic8800_fdrv"),
+#            LK_MODULES (padrão "drm_shmem_helper gpu-sched panfrost aic8800_bsp aic8800_fdrv aic8800_btlpm"),
 #            VENDOR_IMG (padrão ~/hy300-work/vendor.img), JOBS (padrão 12).
 set -euo pipefail
 
@@ -29,7 +29,7 @@ KSRC_GIT="${KSRC_GIT:-$HOME/hy300-handoff/kernel-hy300-rk3566}"
 LKWORK="${LKWORK:-$HOME/hy300-work/lineage-kernel}"
 FACTORY="${FACTORY:-$HOME/hy300-backup}"
 KCONFIG_REQS="${KCONFIG_REQS:-$HOME/android/lineage/kernel/configs/u/android-6.1}"
-read -r -a LK_MODULES <<<"${LK_MODULES:-drm_shmem_helper gpu-sched panfrost aic8800_bsp aic8800_fdrv}"
+read -r -a LK_MODULES <<<"${LK_MODULES:-drm_shmem_helper gpu-sched panfrost aic8800_bsp aic8800_fdrv aic8800_btlpm}"
 VENDOR_IMG="${VENDOR_IMG:-$HOME/hy300-work/vendor.img}"
 JOBS="${JOBS:-12}"
 DTB_NAME=rk3566-hy300.dtb
@@ -62,10 +62,12 @@ build_kernel() {
 	kmake Image modules "rockchip/$DTB_NAME"
 }
 
-# Tecla do gpio-keys no pino de fábrica e fora das saídas de LED (tests/test_dt_gpio_irq.py).
+# Tecla do gpio-keys no pino de fábrica e fora das saídas de LED (tests/test_dt_gpio_irq.py), e os
+# nós do motor de foco, acelerômetro, Bluetooth e HDMI-in (tests/test_port_dt_hardware.py).
 check_dt_keys() {
-	python3 -I "$REPO/tools/dt_gpio_irq.py" check "$KOUT/arch/arm64/boot/dts/rockchip/$DTB_NAME" \
-		--factory "$REPO/device-tree/rk3566-hy300-txcz.dtb"
+	local dtb="$KOUT/arch/arm64/boot/dts/rockchip/$DTB_NAME"
+	python3 -I "$REPO/tools/dt_gpio_irq.py" check "$dtb" --factory "$REPO/device-tree/rk3566-hy300-txcz.dtb"
+	HY300_PORT_DTB="$dtb" python3 -I -m unittest discover -s "$REPO/tests" -p test_port_dt_hardware.py
 }
 
 collect_modules() {
