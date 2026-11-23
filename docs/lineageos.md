@@ -1255,6 +1255,54 @@ de gravar, `adb enable-verity` ou apagar o scratch evita o overlay antigo por ci
 A conferir: `service list | grep -i drm` com `clearkey` e `widevine`, `dumpsys media.drm` (ou um app
 de teste) mostrando Widevine L3, e um vídeo protegido no YouTube ou no Crunchyroll.
 
+### Rodada 13b: vídeo seguro e YUV em SurfaceView (23/11/2026)
+
+O Widevine L3 funcionou de ponta a ponta no aparelho (instalado por remount sobre a 12): decifra o
+stream de teste do Google e o YouTube recebe as chaves. Faltavam duas coisas, diagnosticadas pelo
+worker do Widevine (patch `integracao/0003`, aplicado na árvore, `348c84b`):
+
+- **secure-playback**: o Cobalt (YouTube) só aceita decoder com a feature, pela robustez que o JS
+  pede. `c2.rk.avc/vp9/hevc.decoder` ganharam `<Feature name="secure-playback" />` opcional. Com
+  L3 a decifragem é em software e o decoder recebe buffers comuns.
+- **YUV em SurfaceView**: o minigbm não alocava `YCBCR_420_888` com `GPU_TEXTURE|COMPOSER_OVERLAY`
+  (0x933): o uso de composer vira `BO_USE_SCANOUT` e o backend dumb só aceita scanout em RGB. Todo
+  vídeo YUV numa SurfaceView falhava com `C2RKMpiDec: failed to fetchGraphicBlock with err 22`
+  (YouTube sem DRM, Netflix, ExoPlayer). Patch `external/minigbm/0002`: sem combinação e com
+  `HW_COMPOSER`, tira o scanout e tenta de novo. Teste em `tools/tests/test_video_surfaceview.py`.
+
+Composição do NV12: o drm_hwcomposer tenta pôr a camada de vídeo num plano do VOP2 (os Esmart do
+RK3566 leem NV12 linear; `ro.vendor.hwc.use_overlay_planes` fica no padrão, ligado) e, se o
+commit de teste recusar, compõe pela GPU (o Mesa importa o NV12 como textura externa). Com keystone
+ativo tudo vai para a GPU. Não incluí configuração nova do drm_hwcomposer: nenhuma propriedade dele
+muda esse caminho sem desligar os planos para todo o resto. A ver no aparelho.
+
+**Overlay do remount**: no aparelho o scratch do `adb remount` é uma partição lógica dentro da
+`super` (`/dev/block/mapper/scratch` sobre `mmcblk2p14`, f2fs, com o Widevine e o media_codecs da
+12). Gravar o `super.raw` inteiro reescreve os metadados da `super`, então o scratch some e o
+overlay não monta mais: **a imagem já cuida disso**. Para desfazer o overlay sem gravar (ou se o
+scratch estivesse no `/data`): `adb root && adb enable-verity && adb reboot`. No boot seguinte o
+overlay é descartado.
+
+Conferências: `check_audio_policy.py`, `check_sepolicy.py`, `check_vintf_hals.py` ("12 HALs
+obrigatórios declarados; todo HAL declarado tem serviço no init"), `verify-boot` nos quatro
+boot.img, 199 testes da árvore, nenhuma priv-app fora do allowlist.
+
+Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 13 em `r13/`). **Só a `super` mudou**:
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` | 19.892.224 | `3f27d6f43a026374bf274ea6a59a8e885db5d83630c3b7978d45e595d295aab0` |
+| `boot-uso.img` | 19.892.224 | `49b0567f7f172a9435d4a4c86968346f5b18058484213779b5a6840f799ab8b5` |
+| `boot-sw.img` | 19.892.224 | `4756c318c876924c01f5de5a34d1292871564d3d628b7184db026155fac2a271` |
+| `recovery.img` | 32.626.688 | `7d297a9780882b13374a7e870d7a390d9a24af1d6a97419a283f8bbc86d628e3` |
+| `super.img` (sparse) | 1.888.768.064 | `7b693ff335bb3ac9ff8e67c753e53ba013c6e0fadf274b5c47684277310cc71b` |
+| `super.raw` | 3.263.168.512 | `02b21e97c30111043210bd433fba0179a698593d911a38ec263347cd8d0e594b` |
+
+A conferir: `grep overlay /proc/mounts` vazio depois de gravar; vídeo no YouTube (com e sem DRM),
+Netflix e um player ExoPlayer em SurfaceView, sem "fetchGraphicBlock with err 22"; se a imagem do
+vídeo sair errada ou preta, ver no `dumpsys SurfaceFlinger` se a camada foi para DEVICE (plano) ou
+CLIENT (GPU).
+
 ### Gravar pelo Alpine
 
 O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com
