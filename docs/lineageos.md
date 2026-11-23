@@ -610,17 +610,36 @@ Voltar ao Android 12: gravar `~/hy300-backup/super.img` (descomprimido) na `supe
 | 1,5 GB de RAM | launcher recarregando | ajustar lmkd/zram depois de medir |
 | Seccomp do Codec2 (política do Android 14 no 17) | serviço c2 morre ao iniciar | logcat `minijail`; ajustar a política |
 
-### O que falta
+### Estado (boots 1 a 3)
 
-- **Wi-Fi**: depende do driver AIC8800 no kernel Android (outro trabalho). Quando funcionar: módulos
-  em `prebuilt/modules`, firmware (blob, só local), `wpa_supplicant` e HAL Wi-Fi (`BOARD_WLAN_DEVICE`).
-- **Áudio**: HAL AIDL de referência com tinyalsa no card 0. Sem ele não há som.
-- **Widevine** (acima), Bluetooth, sensores (SC7A20), IR (keylayout já existe).
-- **Vídeo 10 bits e encoders** no caminho do minigbm; Codec2 sem cópia (importar os buffers do
-  minigbm direto no MPP) depois de medir.
-- **sepolicy** própria e SELinux enforcing.
-- **Keystone** no SurfaceFlinger, app de configurações como app de plataforma, entrada HDMI.
-- **bootlog nativo** (C++), recovery do Lineage, OTA.
+Só conta como visto no aparelho o que está nos logs de `~/hy300-work/lineage-artifacts/boot{1,2,3}`.
+
+**Feito e visto no aparelho**
+
+- Primeiro boot pelo Alpine, com o ciclo do diag (logs no `/metadata`, marca de ficar) e a volta
+  automática ao Alpine.
+- Kernel ACK `hy300-ack-6.1` com o DT corrigido: sem tempestade de IRQ ("GPIO Key Home" = 0).
+- Display (painel LVDS 1024x600) e bootlog nativo.
+- GPU Panfrost sem erro (jobs sem timeout).
+- Driver Wi-Fi AIC8800 no kernel Android, com scan.
+- Shutdown e reboot.
+
+**Feito, sem verificação no aparelho**
+
+- App de configurações (`HY300Settings`) como priv-app com a chave de plataforma.
+- Vídeo por hardware (Codec2 + MPP, buffer mode com cópia pela RGA).
+
+**Falta**
+
+- Boot completo: o HAL core de áudio trava o system_server (o Watchdog o mata); corrigido na
+  rodada 5, a conferir no próximo boot.
+- Pilha Wi-Fi completa e adb pela rede (rodada 5, a conferir).
+- Bluetooth e sensores.
+- Widevine.
+- Vídeo 10 bits e encoders.
+- sepolicy própria (hoje permissive).
+- Keystone no SurfaceFlinger.
+- Entrada HDMI (RK628, vídeo e áudio).
 
 ## Resumo das decisões
 
@@ -976,6 +995,8 @@ A conferir no aparelho/código: o caminho de plataforma do xHCI do dwc3 (`usbdrd
 - Mais tarde: autorizar a gravação da `super`.
 
 ## O que não foi verificado
+
+Levantamento de 22/11, antes do primeiro build; o estado atual está em "Estado (boots 1 a 3)".
 
 - A árvore não foi compilada. O kernel com config Android foi (22/11, `hy300-ack-6.1`), mas
   ainda não bootou no aparelho.
