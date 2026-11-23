@@ -180,6 +180,26 @@ Lineage-Rockchip (`proprietary_vendor_rockchip_rk35xx-common`), só como opção
 Os GApps (rodada 6) **não trazem DRM**: o Widevine continua separado e continua faltando. Com
 GApps e sem Widevine, Netflix e Crunchyroll instalam pela loja e não tocam vídeo protegido.
 
+**ClearKey** (rodada 12): o `android.hardware.drm-service-lazy.clearkey` do AOSP é o único HAL de
+DRM da imagem e existe para o `MediaDrm` responder "não suportado" em vez de lançar exceção
+(detalhes na rodada 12). Ele continua quando o Widevine entrar: os dois convivem
+(`IDrmFactory/clearkey` e `IDrmFactory/widevine`).
+
+**Widevine L3** (para a rodada 13; até lá o coordenador instala por `adb remount`): binário do
+Google, **só no build local**, nunca em repositório público.
+
+| | |
+|---|---|
+| Origem | imagem oficial do emulador Android TV 16 arm64 do SDK do Google, `system-images;android-36;android-tv;arm64-v8a` revisão 4 (`arm64-v8a-36_r04.zip`) |
+| SHA-256 do zip | `7398e2f00e5df28332027d5a131fcbefb8d5823bc7103a65a035575d271ffcca` (SHA-1 publicado no XML do SDK conferido: `ceb1dfcc6a28dbd9dbade780428cf7bafb1c65ef`) |
+| CDM | 19.5.0, HAL AIDL v1, sob demanda (`android.hardware.drm-service-lazy.widevine`) |
+| Fingerprint do vendor de origem | `google/sdk_google_atv64_arm64/emu64a:16/BT2A.260319.001/15058170:user/dev-keys` |
+| No checkout | `vendor/hy300-widevine/` (cópia de `~/hy300-work/widevine/vendor-widevine/`), ligado no `device.mk` só se o diretório existir; variante `classico` (a `apex`, do Android 17 `google_apis_playstore`, fica desligada) |
+| Pacote para adb | `~/hy300-work/widevine/pacote/` (`instalar-por-adb.sh`, `SHA256SUMS`, `LEIAME.md`) |
+
+Em Lineage não certificado o nível é L3: o Netflix limita a SD; YouTube e Crunchyroll costumam
+tocar.
+
 ### Animação de boot
 
 A animação com log ao vivo do Android 12 (`android/bootlog`) entra no build pelo próprio repositório
