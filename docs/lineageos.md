@@ -1053,6 +1053,75 @@ config", `dumpsys media.audio_policy` com o "HDMI In" (`AUDIO_DEVICE_IN_TV_TUNER
 `CARD_1_DEV_0`) entre os dispositivos de entrada disponíveis, e o áudio do HDMI no alto-falante
 com o app HDMI aberto.
 
+### Rodada 11: som na placa certa e Bluetooth (23/11/2026)
+
+O boot 7 (rodada 10) completou: boot_completed aos 74 s, keystone carregado e inativo, acelerômetro
+com dados, "HDMI In" na audio policy sem crash, RK628 com probe (`video0` = `rkisp_mainpath`), nó
+do motor com `system:vendor_hy300_motor` 0660 e `sysfs_hy300_motor`, MemAvailable 607 MB. Logs em
+`~/hy300-work/lineage-artifacts/boot7/`.
+
+**Som (kernel `acf8a8518737`).** As placas vinham trocadas: `/proc/asound/cards` mostrava 0 =
+`rockchiphdmiin` e 1 = `rockchip-i2s-sound` (o alto-falante). O "Speaker" do audio policy não tem
+endereço, e o módulo primário do HAL de exemplo usa então o padrão `PrimaryMixer::kAlsaCard` (placa
+0, `StreamPrimary::getCardAndDeviceId`): o áudio ia para o I2S do RK628 (a placa 0 também tem
+`pcmC0D0p`). O `dumpsys media.audio_flinger` mostrava a saída primária em standby sem escrita
+nenhuma, e os logs do HAL do começo do boot já tinham saído do buffer. O worker do kernel fixou a
+ordem (`hy300,card-index` no DT): alto-falante = 0, `rockchiphdmiin` = 1, o que também acerta o
+`CARD_1_DEV_0` do HDMI In. Os sha256 do `prebuilt/VERSION` conferem (Image.gz `bd4b62f3…8d6b`, dtb
+`fdb26ebf…8b54`, módulos iguais aos do `cae418b6c490`).
+
+**Bluetooth (parado em `BLE_TURNING_ON`).** O `vendor.bluetooth-default` estava `running`, o
+`/dev/ttyS1` com `bluetooth:bluetooth` 0660 e `hci_attach_dev`, o `aic8800_bsp` carregou o patch do
+BT (`bt patch version ... Nov 09 2023`, `uart_baud 1500000`, `uart_flowctrl 1`) e o
+`/sys/class/bluetooth` estava vazio (sem `hci0`, como esperado no modo UART). A causa está no HAL
+padrão: o `initialize()` tenta primeiro o hci do kernel (`NetBluetoothMgmt::openHci`), e o
+`waitHciDev()` reenvia o "Read Index List" a cada 500 ms **sem prazo** enquanto nenhum hci aparece.
+Sem `hci0`, o `initialize()` nunca volta e a pilha fica em `BLE_TURNING_ON`; o HCI_RESET nem chega
+a ser enviado. Correções:
+
+- patch `hardware/interfaces/0003`: com `vendor.ser.bt-uart` definido, o HAL abre o tty direto
+  (H4 pela UART), sem passar pelo hci do kernel;
+- o `hy300-bt-uart` roda de novo quando o `hy300-wifi-modules` termina
+  (`vendor.hy300.wifi.iface`): o `aic8800_btlpm` cria o rfkill `bluetooth` depois da primeira
+  passada, e no boot 7 ele ficou bloqueado (`rfkill2 soft=1`);
+- vendor-init da AICSemi: não entra. O `aic8800_bsp` já carrega o patch e a configuração da UART
+  do BT pelo SDIO, e no Linux o AIC8800 por UART sobe com o H4 genérico
+  (`hciattach ... any 1500000 flow`). Se o controlador não responder ao HCI_RESET, o próximo passo
+  é olhar `logcat -s android.hardware.bluetooth-service.default bt_hci`.
+
+**SELinux.** O `insmod` do `aic8800_bsp` e do `aic8800_btlpm` era negado em `module_load` porque
+`/vendor/lib/modules` ficava `vendor_file` (o AOSP não rotula esse diretório). O
+`sepolicy/vendor/file_contexts` agora dá `vendor_kernel_modules`, que o `hy300_wifi_modules` e o
+`vendor_modprobe` já podem carregar. As outras negações do boot 7 não são do insmod; as do
+`hy300_bootlog` (SurfaceFlinger escrevendo no socket e no binder dele, fence do composer) ficam para
+o worker de recursos.
+
+**Outros.** Builds de teste com `ro.logd.size=1M` (com `ro.config.low_ram` os buffers do logd são
+mínimos e o log do HAL de Bluetooth sumiu antes de ser lido). A Aurora Store voltou à imagem: o
+`rsync --delete` do kernel em `prebuilt/` tinha apagado o `prebuilt/aurora`, e as imagens das
+rodadas 7 a 10 saíram sem ela; agora ela fica em `prebuilt-apps/aurora/`.
+
+Conferências: `check_audio_policy.py`, `check_sepolicy.py`, `check_vintf_hals.py` ("11 HALs
+obrigatórios declarados; todo HAL declarado tem serviço no init"), `verify-boot` nos quatro
+boot.img, 183 testes da árvore, nenhuma priv-app fora do allowlist. Árvore `ffb218a`.
+
+Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 10 em `r10/`). Boot e super mudaram (kernel
+novo no boot; Bluetooth, sepolicy, logd e Aurora na super):
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` | 19.892.224 | `3f27d6f43a026374bf274ea6a59a8e885db5d83630c3b7978d45e595d295aab0` |
+| `boot-uso.img` | 19.892.224 | `49b0567f7f172a9435d4a4c86968346f5b18058484213779b5a6840f799ab8b5` |
+| `boot-sw.img` | 19.892.224 | `4756c318c876924c01f5de5a34d1292871564d3d628b7184db026155fac2a271` |
+| `recovery.img` | 32.624.640 | `8b8034c4fa40dc98fd1d8997d0bb1ee118569c75a4e7c2188cd229773e13ac17` |
+| `super.img` (sparse) | 1.886.056.540 | `7b704b92812e3649531224452a13ea445019c5d267c7a8ac47b6cd414ed2e14a` |
+| `super.raw` | 3.263.168.512 | `86f786cf60319e6456aa2084d12fdb47408fc6dde3096b7988732dc8c7975378` |
+
+A conferir no aparelho: `/proc/asound/cards` com 0 = alto-falante e 1 = `rockchiphdmiin`; som no
+alto-falante; áudio do HDMI com o app HDMI aberto; `dumpsys bluetooth_manager` em `ON` com
+endereço; `rfkill` do `bluetooth` com `soft=0`; parear um controle; nenhuma negação `module_load`;
+Aurora Store no launcher.
+
 ### Gravar pelo Alpine
 
 O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com
