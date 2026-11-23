@@ -391,6 +391,50 @@ check_vintf do build) e falha se faltar algum de `configs/vintf/required_hals.tx
 core/config/effect, health, keymint, allocator, composer3, gatekeeper, media.c2). Na imagem da
 rodada 2 ele acusa exatamente power e áudio.
 
+### Rodada 4: o que o boot 2 mostrou (23/11/2026)
+
+Boot 2 (imagem da rodada 3, `gpu=sw`): o ciclo fechou (diag, marca de ficar, volta ao Alpine).
+Logs em `~/hy300-work/lineage-artifacts/boot2/`.
+
+- **Travadas**: tempestade de IRQ na CPU0 pela "GPIO Key Home" com as células do DT trocadas
+  (achado do worker do kernel; 16,5 milhões de IRQs no boot 1). Kernel novo `hy300-ack-6.1`
+  `1ee24ab83ac1` (DT corrigido e backports do Panfrost) no `prebuilt/`. O diag agora grava
+  `interrupts.txt` (`/proc/interrupts`) a cada 20 s: a linha "GPIO Key Home" tem de ficar perto
+  de 0. O boot padrão volta a ser **`gpu=panfrost`**; `boot-sw.img` é a reserva.
+- **system_server sem `activity`**: o `Watchdog` matou o system_server ("Blocked in handler on
+  main thread (main) for 69s"), preso em `AudioService.<init>` → `AudioSystem.isCallScreeningModeSupported`
+  esperando o audioserver, que reiniciava em laço. Causa: o serviço de efeitos do APEX de áudio
+  sai ("config file audio_effects_config.xml not found"; o APEX de exemplo não traz o arquivo e o
+  `EffectMain.cpp` procura no APEX e depois com `audio_find_readable_configuration_file` no
+  `/vendor/etc`), e o `onrestart restart audioserver` do `.rc` dele derruba o audioserver a cada
+  vez. Correção: `hardware_interfaces_audio.use_default_audio_effects_config=true` e
+  `audio_effects_config.xml` no `/vendor/etc` (o mesmo arquivo do exemplo do AOSP). Os
+  "No service published for: jobscheduler/trust" eram consequência do system_server reiniciando.
+- **SIGSEGV do `hy300-bootlog-native`**: ao sair (deadline de 180 s), a thread do logcat, desligada,
+  chamava `addLine` num `BootModel` da pilha do `main` já destruído. Agora `startLogReader`
+  (`bootlog_model`) dá à thread uma referência própria ao modelo (teste no host:
+  `LogReader.keepsModelAliveAfterOwnerDropsIt`) e o `main` sai por `_exit`. O fallback para o Java
+  não foi exercitado: o nativo desenhou em ~1 s e só caiu na saída.
+- **diag**: "logcat/ip: inaccessible or not found" porque o `sh` do vendor força
+  `PATH=/vendor/bin:/vendor/xbin` (`MKSH_DEFPATH_OVERRIDE` do `sh_vendor`, `external/mksh/Android.bp`).
+  O diag roda com `/system/bin/sh` e exporta `PATH` com `/system/bin` primeiro; os testes cobrem
+  os dois (`test_init_rc.py`, `test_diag.py`). O Wi-Fi já deu sinal de vida no ACK: módulos com
+  rc=0 e `wlan0` aos 43 s; com o `ip` e o `iw` alcançáveis o scan deve rodar.
+- **Shutdown**: o diag pediu o reboot aos 482 s e o aparelho só reiniciou aos 711 s, pelo panic do
+  pré-timeout (shutdown travado pela tempestade). Conferir no próximo pstore.
+
+Artefatos da rodada 4 em `~/hy300-work/lineage-artifacts/` (rodada 3 em `r3/`), kernel
+`1ee24ab83ac1`; `verify-boot` passa nos três boot.img e o `check_vintf_hals.py` dá "10 HALs
+obrigatórios declarados":
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` (`gpu=panfrost`, vai na `recovery`) | 19.888.128 | `a122e5154d4249ba2c7facebb4ed0f14e10ed8899f55d3a1c779aa4e45105735` |
+| `boot-sw.img` (`gpu=sw`, reserva) | 19.888.128 | `084c78c5ff184f2538509700afa46b19da7d05aca545786616e44c7a3e7a9d0d` |
+| `recovery.img` | 32.614.400 | `2a14415f0f383fa3a3d5dcfa94106bd8f99226e0f94129a215b816bd821fd88f` |
+| `super.img` (sparse) | 1.407.674.332 | `6bbfecae478458803115029f955255017399d074b7a8d04bcf79492fc1189fe0` |
+| `super.raw` (vai na `super`) | 3.263.168.512 | `ae71da3fee397fa82c14da5faa37c7c3da0a42cd352c848c4d63f9aac81dbdf8` |
+
 ### Gravar pelo Alpine
 
 O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com
