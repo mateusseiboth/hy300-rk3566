@@ -204,6 +204,69 @@ Cópia estável em `~/hy300-work/lineage-artifacts/` (o `out/` muda a cada build
   `HY300Settings` (priv-app) + privapp-permissions, bootlog (nativo, jar, script, zip, rc),
   `hy300-clear-bcb.sh`, `watchdogd` no `init.rk3566.rc`.
 
+### Rodada 2: primeiro boot fechado, sem rede (23/11/2026)
+
+O Lineage ainda não tem Wi-Fi: o primeiro boot é um ciclo fechado Alpine → Lineage gravando logs →
+Alpine, sem ninguém olhando.
+
+- **`hy300-diag`** (`configs/init/hy300-diag.sh` da árvore, testes em `tools/tests/test_diag.py`):
+  só no userdebug (`ro.debuggable=1`), ligado por `androidboot.hy300.diag=1` na cmdline desta
+  imagem (ou por `/metadata/hy300-diag/ativo`; o arquivo pode faltar). Começa no `post-fs` e
+  grava em `/metadata/hy300-diag/<n>/` (`n` no arquivo `contador`; ficam as 3 últimas coletas,
+  o metadata tem 16 MiB):
+  - a cada 20 s: `dmesg.txt`, `logcat.txt` (`logcat -b all -d -v threadtime`), `getprop.txt`,
+    cada um gravado num `.tmp` e renomeado, com `sync` depois;
+  - depois do `boot_completed`, uma vez: `surfaceflinger.txt`, `media.txt` (`dumpsys
+    media.player`), `hal.txt` (`lshal`), `meminfo.txt`, `freq.txt` (cpufreq, devfreq da GPU e da
+    DDR, temperaturas), `lsmod.txt`, `ps.txt`;
+  - `diag.txt`: linha do tempo (início, boot_completed, marca, reinício);
+  - `wifi.txt`: teste do AIC8800 em segundo plano (abaixo).
+  - Aos **480 s de uptime**, com ou sem `boot_completed`: grava a **marca de ficar do Alpine** na
+    `misc` (0x10000, `hy300-ficar\0` + versão 1, o mesmo do `scripts/reboot-to-alpine.sh`; só
+    se a área estiver zerada ou já marcada; o contador em 0x10010 não é tocado), `sync` e
+    `setprop sys.powerctl reboot`. Reboot sem alvo: o init só grava BCB para `recovery`,
+    `bootloader`, `quiescent`, `sideload` e `fastboot` (`system/core/init/reboot.cpp`), então o
+    U-Boot sobe a `boot` (o Alpine), que fica no ar por causa da marca.
+  - Se o boot travar antes do serviço: pré-timeout do watchdog e `panic=5` reiniciam, e o
+    Alpine assume (sem a marca, ele segue o autoboot normal).
+- **Wi-Fi AIC8800 sem HAL**: `aic8800_bsp`/`aic8800_fdrv` do mesmo `hy300-ack-6.1`
+  (`9358ce442f3e`, que já tem o polling e os tempos da carga do firmware do `f1fdbdc`; o
+  religamento do WL_REG_ON é do lado do usuário, `recover_wifi_chip` do `hy300-wifi.sh`), em
+  `/vendor/lib/modules` (não carregam sozinhos: o ueventd não trata modalias). O firmware vai
+  para `/vendor/etc/firmware/aic8800` **só no build local** (`prebuilt/firmware`, extraído do
+  `vendor.img` de fábrica pelo `wifi_payload.py firmware`). O `hy300-diag` usa as funções do
+  `kernel/initramfs-test/hy300-wifi.sh` (instalado em `/vendor/etc/hy300/` pelo `Android.bp` de
+  lá): carrega os módulos, espera a interface 20 s, e se ela não vier grava o estado do SDIO,
+  religa o chip e tenta de novo; sobe a interface e faz `iw dev <if> scan` com `timeout 60`. Do
+  scan fica só a **contagem** de redes (nomes e endereços dos vizinhos não são gravados), mais os
+  erros e as linhas `aic`/`rwnx`/`sdio`/`mmc1` do dmesg. Sem `wpa_supplicant`.
+
+Artefatos da rodada 2 em `~/hy300-work/lineage-artifacts/` (a rodada 1 foi para `r1/`), com
+`SHA256SUMS` e `kernel-VERSION`; `verify-boot` passa no `boot.img` e no `recovery.img`:
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` (vai na `recovery`) | 19.888.128 | `19989a453ed0a34954ae8de5a5db680c30a29a066f187dde2e691b8052aac803` |
+| `recovery.img` | 32.614.400 | `79192bbea0c977b7ae9e2d6c927533e561da368379d21c7990b5384ba483d90a` |
+| `super.img` (sparse) | 1.307.981.732 | `e04937eca1ceeae7984e33070f89f2c9206c48746da1499bc69ce2c8fd88c96e` |
+| `super.raw` (vai na `super`) | 3.263.168.512 | `309713cfcf21655462784d0dff91b25fdbe529773d35a20d844a7a69f6628b81` |
+
+Ler os logs no Alpine (o metadata é ext4 sem criptografia; `noload` não deixa o ext4 reproduzir o
+journal e escrever na partição):
+
+```sh
+mkdir -p /mnt/metadata
+mount -t ext4 -o ro,noload /dev/block/by-name/metadata /mnt/metadata
+cat /mnt/metadata/hy300-diag/contador
+ls /mnt/metadata/hy300-diag/$(cat /mnt/metadata/hy300-diag/contador)/
+umount /mnt/metadata
+```
+
+Do PC: `ssh root@<IP> 'mount -t ext4 -o ro,noload /dev/block/by-name/metadata /mnt/metadata &&
+tar -C /mnt/metadata -cf - hy300-diag; umount /mnt/metadata' > hy300-diag.tar`. A marca de ficar
+é apagada pelo estágio 1 do Alpine no boot seguinte, como sempre. Para tirar o diag, basta gravar
+um `boot.img` sem `androidboot.hy300.diag=1` (o `BoardConfig.mk` diz onde).
+
 ### Gravar pelo Alpine
 
 O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com
