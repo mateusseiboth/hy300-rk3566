@@ -812,19 +812,43 @@ falhos (misc)", logo depois do bloco do `reboot-to-alpine.sh`:
 Sugestão para o mesmo repositório (não aplicada): o `reboot-to-alpine.sh` pode tentar esse gatilho
 quando `adb root` falhar, para o mesmo comando servir nos dois sistemas.
 
-Artefatos da rodada 7 em `~/hy300-work/lineage-artifacts/` (rodada 6 em `r6/`), com GApps, kernel
-`1ee24ab83ac1` (sem prebuilt novo). `verify-boot` passa nos quatro boot.img;
-`check_vintf_hals.py`: "11 HALs obrigatórios declarados; todo HAL declarado tem serviço no init";
-115 testes da árvore passam; nenhuma priv-app fora do allowlist.
+**Kernel `cae418b6c490`** (worker do kernel; detalhes em `docs/kernel-6.1.md`, "Hardware da TXCZ
+no ACK"): motor de foco `hy300_focus_motor` embutido, RK628 ligado no DT e o módulo novo
+`aic8800_btlpm`. Os sha256 do `prebuilt/VERSION` conferem com os arquivos (Image.gz `bb0b84b8…272a`,
+dtb `b3126dba…aae6`, `aic8800_btlpm.ko` `8441a9b5…79ab`; os outros módulos iguais).
+
+- `aic8800_btlpm` (rfkill do Bluetooth, depende do `aic8800_bsp`): o `hy300-wifi-modules.sh`
+  carrega depois do `load_wifi_modules` (bsp e fdrv), só se o bsp subiu; se falhar, o Wi-Fi segue.
+  `BOARD_VENDOR_KERNEL_MODULES_LOAD` registra a ordem `drm_shmem_helper`, `gpu-sched`, `panfrost`,
+  `aic8800_bsp`, `aic8800_btlpm`, `aic8800_fdrv` no `modules.load` (ninguém carrega a lista
+  inteira: a GPU sobe pelo `init.rk3566.rc` e o AIC8800 pelo script). O HCI do Bluetooth e o HAL
+  ficam com o worker de recursos.
+- Motor de foco: `/sys/class/motor_cc/motor_cc/motor` passa a `system:vendor_hy300_motor` 0660 e o
+  `hd_camera_on` fica 0444 (a fábrica fazia `chmod 0777`). O caminho do gid:
+  - AID de vendor `AID_VENDOR_HY300_MOTOR` (2901) em `config.fs`;
+  - `product/etc/permissions/hy300-focus-motor.xml` associa a permissão
+    `io.github.hy300.settings.permission.FOCUS_MOTOR` ao gid (só `/system` e `/product` podem
+    associar permissão a gid);
+  - o app declara essa permissão com nível `signature` e a pede, então só ele a recebe;
+  - sepolicy (`sepolicy/vendor`): tipo `sysfs_hy300_motor` para
+    `/devices/platform/focus-motor/motor_cc/motor_cc/{motor,hd_camera_on}` (nó `focus-motor` do DT)
+    e `allow platform_app sysfs_hy300_motor:file rw_file_perms` (o app é priv-app com a chave de
+    plataforma). Vale quando o boot sair do permissive.
+  - Falta no aparelho: conferir `ls -lZ` do nó e o foco pelo app.
+
+Artefatos da rodada 7 em `~/hy300-work/lineage-artifacts/` (rodada 6 em `r6/`; o primeiro build da
+rodada 7, com o kernel antigo, em `r7a/`), com GApps. `verify-boot` passa nos quatro boot.img
+contra o Image.gz novo; `check_vintf_hals.py`: "11 HALs obrigatórios declarados; todo HAL
+declarado tem serviço no init"; 124 testes da árvore passam; nenhuma priv-app fora do allowlist.
 
 | Arquivo | Tamanho | sha256 |
 |---|---|---|
-| `boot.img` (perfil `teste`, vai na `recovery`) | 19.888.128 | `83f9859659f15822a750d9df84cb763239bf62ec852dcf1b97035ba1f88edeb3` |
-| `boot-uso.img` (perfil `uso`) | 19.888.128 | `c4c18b49ca857ddcf84b833fc0e10e742ca19f8b32925d6bbe6c8a6ddbb218c3` |
-| `boot-sw.img` (perfil `teste`, `gpu=sw`) | 19.888.128 | `849439d71c4cf011771838717d3dde949b68f60b5f5b0111c2fa090407e19e62` |
-| `recovery.img` | 32.614.400 | `f86da881addb4325e5875dd5962eab4a550b7974e4b61edcc27e386576229b49` |
-| `super.img` (sparse) | 1.885.065.308 | `f9f4f71a5c9d55c9519405afe2eefc17291072cb9122abffba440e42a7542773` |
-| `super.raw` (vai na `super`) | 3.263.168.512 | `8c9e4eff0296e12fe5f8ecc584a33ff18903494c4aa53667641cc5d9a62a2e57` |
+| `boot.img` (perfil `teste`, vai na `recovery`) | 19.888.128 | `55bebe21d952150bd466eecb85ed0c31a63ee2a0a8cfaa53540fc1bcd60efe65` |
+| `boot-uso.img` (perfil `uso`) | 19.888.128 | `47be28acfe3c1c89ad7756acac54ee7d015da830eccaf0ba7c219fd4e72ea2c3` |
+| `boot-sw.img` (perfil `teste`, `gpu=sw`) | 19.888.128 | `638f1b676bd5e49b20d77dcdaa0abebf4fb7f95edd54c89509087dcd41a9d378` |
+| `recovery.img` | 32.614.400 | `4f18f2b76e4b01a9f36fcc2b13681a022c10f69302f66bafc5d052a37010c30a` |
+| `super.img` (sparse) | 1.875.750.920 | `48e9ffb6cd21e84e7ab56387164b18b282c0ed2d7e79cb2bbf63336364e9e214` |
+| `super.raw` (vai na `super`) | 3.263.168.512 | `9f2dd74c961641dd52f1fff67bd78b4c9b12714334239489e9a68092f80533f5` |
 
 Valem os mesmos avisos da rodada 6 para gravar com GApps (apagar o `/data`, `wifi.conf` de novo,
 fuso num `/data` antigo).
