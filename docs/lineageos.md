@@ -1,10 +1,247 @@
 # LineageOS 24.0 (Android 17) no HY300: inventário, decisões e plano
 
-Estado em 22/11/2026: levantamento feito e esqueleto da árvore de dispositivo criado em
-`~/android/device-hy300` (git local, branch `lineage-24.0`, vira `device/hy300/rk3566`).
-Nada foi compilado. O checkout do Lineage (`~/android/lineage`) ainda estava no começo do
-`repo sync`: o que não tinha chegado foi lido dos repositórios públicos (GitHub do LineageOS,
-`android.googlesource.com` na tag `android-17.0.0_r1`) e está marcado assim.
+Estado em 22/11/2026 (noite): árvore integrada em `~/android/lineage/device/txcz/hy300` (GitHub
+`mateusseiboth/android_device_hy300_rk3566`, branch `lineage-24.0`), `lunch` passa e o build está
+em andamento com GPU aberta (Panfrost) e vídeo por hardware (Codec2 + MPP). Como compilar, onde
+ficam os artefatos, como gravar pelo Alpine e os riscos estão em "Build e primeiro boot", logo
+abaixo. O inventário e as decisões de antes seguem nas seções seguintes.
+
+## Build e primeiro boot (22/11/2026)
+
+### Onde está cada coisa
+
+| O quê | Onde |
+|---|---|
+| Checkout `lineage-24.0` | `~/android/lineage` (no NVMe). Os objetos git (`.repo/project-objects`, 29 GB) foram para o HD ext4: `/mnt/hd/android-lineage/.repo/project-objects`, com link simbólico. O resto do `.repo` fica no NVMe: o sandbox (nsjail) do Lineage monta `.repo/manifests.git` com escrita (`BUILD_BROKEN_SRC_DIR_RW_ALLOWLIST`) e falha se o caminho passar por um link para outro sistema de arquivos |
+| local_manifests | `.repo/local_manifests/hy300.xml` (árvore, este repositório em `vendor/hy300/hy300-rk3566`, aospext, codec2, libmpp, librga, libhardware_rockchip; os de terceiros fixados por commit), `hy300-remove.xml` (só `prebuilts/qemu-kernel` e os webview x86) e `hy300-prune.xml` (poda, abaixo). Os `kernel/prebuilts/*`, `common-modules/*` e `prebuilts/android-emulator` que tinham sido removidos voltaram: o Soong do 24.0 não analisa sem eles |
+| Árvore do aparelho | `device/txcz/hy300` (não `device/hy300/rk3566`: o build só acha o `BoardConfig.mk` em `device/*/<PRODUCT_DEVICE>`, e o finder do Soong não segue link simbólico). `~/android/device-hy300` agora é link para lá |
+| Kernel prebuilt | `kernel/build-lineage-kernel.sh` (este repo) gera `device/txcz/hy300/prebuilt/` de um commit fixo do `hy300-ack-6.1` (`git archive`, sem mexer no checkout do kernel) e grava o commit e os sha256 em `prebuilt/VERSION` |
+| Ferramentas de host do Mesa | `device/txcz/hy300/tools/build-mesa-host-tools.sh` → `~/hy300-work/mesa-host/install/bin` (LLVM 22: o LLVM 23 do Fedora não compila o `clc_helpers.cpp` do Mesa 26.1-devel) |
+| Logs | `~/hy300-work/lineage-build/m-*.log`, `~/hy300-work/lineage-kernel-build*.log` |
+
+### Como compilar
+
+```sh
+cd ~/android/lineage
+repo sync -c device/txcz/hy300 vendor/hy300/hy300-rk3566 vendor/glodroid/aospext hardware/rockchip/codec2 \
+    hardware/rockchip/libmpp hardware/rockchip/librga hardware/rockchip/libhardware_rockchip
+device/txcz/hy300/tools/apply_patches.py .                 # patches/ da árvore (codec2, librga)
+device/txcz/hy300/tools/build-mesa-host-tools.sh .         # uma vez
+~/hy300-handoff/hy300-rk3566/kernel/build-lineage-kernel.sh  # prebuilt/ (Image.gz, módulos, resource)
+export PATH="$HOME/hy300-work/mesa-host/install/bin:$PATH"
+export GOMEMLIMIT=20GiB SOONG_INCREMENTAL_ANALYSIS=false   # 31 GB de RAM: ver abaixo
+export ALLOW_MISSING_DEPENDENCIES=true                     # poda do checkout: ver abaixo
+source build/envsetup.sh && lunch lineage_hy300-cp2a-userdebug
+nice -n 10 m -j12
+python3 ~/hy300-handoff/hy300-rk3566/tools/lineage_prebuilt.py verify-boot \
+    out/target/product/hy300/boot.img --factory-boot ~/hy300-backup/boot.img \
+    --kernel-gz device/txcz/hy300/prebuilt/Image.gz
+```
+
+Dependências instaladas no Fedora: `lz4`, `ncurses-compat-libs`, `llvm22-devel`, `clang22-devel`,
+`spirv-llvm-translator22-devel`, `libclc22-devel`, `spirv-tools-devel`, `glslang`, `python3-ply`,
+`libdrm-devel`, `expat-devel` (meson, ninja, mako e pyyaml já existiam).
+
+**Poda do checkout** (`hy300-prune.xml`, 132 projetos): `cts`, `test/vts-testcase/*` (menos `hal`), `system/software_defined_vehicle/*`, `hardware/qcom-caf/*`,
+`hardware/qcom/*`, `vendor/qcom/opensource/*`, `device/qcom/*`, `device/google/{cuttlefish,
+cuttlefish_prebuilts,cuttlefish_vmm,sdv,sdv_display_safety,trout}` e `device/google_car`. Nenhum
+entra no produto do HY300 (`device/google/atv` fica). Os diretórios foram movidos para
+`/mnt/hd/android-lineage/removed/<caminho>` (5,7 GB); os objetos git continuam no
+`.repo/project-objects`. O build roda com `ALLOW_MISSING_DEPENDENCIES=true` para dependência de
+teste desses projetos não parar a análise. Para voltar um projeto: apagar a linha dele no
+`hy300-prune.xml` e `repo sync -l <caminho>` (ou mover o diretório de volta). Voltaram porque o produto depende deles
+(o `ALLOW_MISSING_DEPENDENCIES` só adia o erro para o ninja): `platform_testing`
+(`PlatformMotionTestingComposeValues`, do SystemUI), `test/vts-testcase/hal` (dirgroup do
+trusty) e, como cópia parcial fora do controle do repo, `cts/libs/json` (`jsonlib`, do
+`protologtool`) e `device/google/cuttlefish/apex/keys` (chave do APEX do Gatekeeper por
+software). Conferência: os módulos com dependência ausente estão nas regras `missing
+dependencies` dos `out/soong/build.*.ninja`; fora testes, nenhum pode sobrar.
+
+**Memória**: a análise do Soong do 24.0 passa de 24 GB de RSS. Com 31 GB e a sessão do usuário
+aberta, o primeiro `m` ficou mais de uma hora em swap, com ~1 min de CPU a cada 10. Ele foi
+interrompido e relançado com `GOMEMLIMIT=20GiB` e `SOONG_INCREMENTAL_ANALYSIS=false` (sem
+`--incremental-build-actions`), e travou do mesmo jeito: o heap vivo passa do que sobra da RAM.
+Por isso a poda acima. Durante o build há um
+swap temporário de 16 GB em `/mnt/hd/swap-build` (fora do fstab), removido no fim.
+
+### O que entrou no build
+
+- **Produto**: Lineage TV (`atv_base.mk` + `common_full_tv.mk`), 64 bits, `atv_lowram_defaults.mk`,
+  FCM 8, header v2, `lineage_hy300-cp2a-userdebug`, SELinux permissive pela cmdline.
+- **Kernel**: `hy300-ack-6.1` como prebuilt (`Image.gz` com o DT embutido) + módulos da GPU
+  (`drm_shmem_helper`, `gpu-sched`, `panfrost`) em `/vendor/lib/modules`, carregados no
+  `early-init` pelo `modprobe` do vendor.
+- **GPU (direto, sem passar por software)**: Mesa 26.1 do próprio `external/mesa3d` compilado
+  pelo aospext do GloDroid (meson dentro do build), só o driver `panfrost`; `mesa_clc`,
+  `vtn_bindgen2` e `panfrost_compile` vêm do host (`-Dmesa-clc=system -Dprecomp-compiler=system`).
+  `ro.hardware.egl=mesa`, `drm.gpu.vendor_name=panfrost` (o EGL abre o nó do Panfrost, não o do
+  rockchip), GLES 3.1. Composer: `android.hardware.composer.hwc3-service.drm` do AOSP. Gralloc:
+  minigbm `generic`, **sem patch**: o rockchip é driver dumb no minigbm e o kernel Android libera
+  `CREATE_DUMB` no render node (`drm_ioctl.c`, `DRM_RENDER_ALLOW`); o Panfrost importa por dma-buf.
+- **Vídeo por hardware**: ver "Vídeo" abaixo.
+- **Segurança por software**: `android.hardware.security.keymint-service` (C++ puresoft, exigido
+  pelo FBE), `com.android.hardware.gatekeeper.nonsecure`, health de exemplo.
+- **Rede**: só cabo por adaptador USB (`android.hardware.ethernet.xml`), até o Wi-Fi do ACK.
+- **Desempenho**: CPU, GPU (devfreq do Panfrost) e DDR (`dmc`) no governador `performance` no
+  `init.rk3566.rc`; o térmico do kernel limita por cima. lmkd por PSI com `kill_heaviest_task`,
+  `thrashing_limit=30`, stall completo de 700 ms para virar crítico: o app de vídeo em primeiro
+  plano é o último a sair. zram 75 % lz4, `swappiness=100`.
+- **Animação de boot com log**: ver "Animação de boot" abaixo.
+- **App de configurações do projetor** (`android/hy300-settings`, `HY300Settings`): compilado do
+  fonte pelo `Android.bp` do app, priv-app no `/product` com a chave de plataforma, targetSdk 32.
+  Abre pelo item "Projetor" do TvSettings do Lineage (ação `com.android.tv.settings.SOUND`, título
+  e ícone vindos do app) e pela tecla F12. Motor e LEDs com 0666 no `init.rk3566.rc`, como a
+  fábrica. **Sem efeito no primeiro build**: keystone (as props `persist.sys.keystone.*` são
+  gravadas, mas ninguém lê até o patch do SurfaceFlinger), foco (depende do driver `motor_cc` no
+  kernel Android), brilho/contraste/saturação/matiz (eram aplicados pelo HWC da Rockchip; o
+  drm_hwcomposer não lê essas props), abrir HDMI (o app de câmera da Rockchip não existe) e o
+  keystone automático (sem HAL de sensores).
+
+### Vídeo por hardware (Codec2 + MPP)
+
+Tudo fonte, por local_manifest, sem blob nos nossos repositórios:
+
+| Projeto | Origem | Licença | O que faz |
+|---|---|---|---|
+| `hardware/rockchip/codec2` | `Lineage-Rockchip/android_hardware_rockchip_codec2` (`df12a8f`) | Apache-2.0 (cabeçalhos dos fontes) | serviço `android.hardware.media.c2@1.1-service` (HIDL 1.1, aceito no FCM 8), componentes `c2.rk.*` |
+| `hardware/rockchip/libmpp` | `rockchip-linux/mpp` (`9b56348`, branch develop) | Apache-2.0 / MIT (`LICENSES/`) | `libmpp` do fonte (o `Android.bp` é do próprio MPP) |
+| `hardware/rockchip/librga` | `Lineage-Rockchip/android_hardware_rockchip_librga` (`1a0f26b`) | Apache-2.0 (`COPYING`) | cópia/conversão por hardware (RGA) |
+| `hardware/rockchip/libhardware_rockchip` | `Lineage-Rockchip/android_hardware_rockchip_libhardware_rockchip` (`ac66dee`) | **sem licença declarada** nos headers `gralloc_rockchip.h`, `hardware_rockchip.h`, `rga.h` (o `img_gralloc_public.h` é MIT) | só headers (constantes de formato e de uso do gralloc) |
+
+Patches da árvore (`device/txcz/hy300/patches`, aplicados por `tools/apply_patches.py`):
+
+1. `codec2/0001`: o namespace não importa mais `vendor/rockchip/rk35xx-common` (onde o
+   Lineage-Rockchip pega `libmpp` e `librga` em binário); **sem NPU**: os modelos yolov5 `.rknn`
+   não entram na imagem. O código do yolov5 continua compilado, mas só abre o `librknnrt.so` por
+   `dlopen`, que não existe no aparelho: o modo "smart v3" do encoder cai no modo normal.
+2. `codec2/0002`: **gralloc genérico (minigbm)**. O Codec2 da Rockchip foi escrito para o gralloc
+   da Rockchip: aloca com `RK_GRALLOC_USAGE_SPECIFY_STRIDE` e outros bits privados, formato
+   `HAL_PIXEL_FORMAT_YCrCb_NV12` (0x15, da Rockchip), e importa os buffers do gralloc direto no
+   MPP. O minigbm recusa bit de uso desconhecido (`Unhandled gralloc usage`) e não conhece o 0x15.
+   Com `C2_RK_GENERIC_GRALLOC` o decoder fica sempre em "buffer mode": o MPP decodifica nos buffers
+   internos dele (dma-heap/drm) e cada quadro é copiado pela RGA (ou CPU, se a RGA falhar) para um
+   bloco `YCBCR_420_888` (NV12 no minigbm) sem bits privados. Custo: uma cópia de RGA por quadro.
+3. `librga/0001`: `librga` compilada do fonte no modo `android_ndk` do `CMakeLists.txt` (só a API
+   por fd, sem o gralloc da Rockchip), que é o que o Codec2 usa.
+
+`media_codecs.xml` / `media_codecs_c2_rk.xml` (vendor): decoders `c2.rk.{avc,hevc,vp9,vp8,mpeg2,
+m4v,h263}` até **1920x1088** a 60 fps. O RK3566 faz H.264/HEVC/VP9 até 4K60, mas o painel é
+1024x600 e os buffers de 4K não cabem bem em 1,5 GB; limitar faz o Netflix e o Crunchyroll pedirem
+no máximo 1080p. Os codecs de software (`c2.android.*`) seguem disponíveis pelo APEX swcodec.
+
+`/dev/mpp_service` e `/dev/rga` ficam `0660 system system` (o serviço roda como `mediacodec` com
+grupo `system`). No kernel, o `rk3566-box-demo-v10.dtsi` liga rkvdec, vdpu, iep, jpegd e RGA.
+
+Fica de fora por enquanto: **10 bits** (HEVC Main10, VP9 perfil 2) e **encoders**: o caminho de
+P010 e o de entrada do encoder dependem dos bits de uso do gralloc da Rockchip. AV1 não existe no
+RK3566.
+
+### DRM (Netflix, Crunchyroll)
+
+Netflix e Crunchyroll exigem **Widevine**. O HAL do Widevine (`android.hardware.drm-service.widevine`,
+`libwvhidl`/`liboemcrypto`) é binário do Google, não existe no AOSP/Lineage e **não vai para os
+nossos repositórios**. Sem ele os dois apps não tocam vídeo protegido. Com o Widevine num Lineage
+não certificado o nível é **L3** (software) e o Netflix limita L3 a **SD** (até 480p);
+Crunchyroll costuma aceitar mais. Não há como subir de nível sem certificação, e não se tenta
+contornar. O Widevine de fábrica é de 32 bits (Android 12, vendor 32 bits) e não roda neste
+Lineage só de 64 bits; um Widevine de 64 bits para Android 15/16 existe nos blobs do
+Lineage-Rockchip (`proprietary_vendor_rockchip_rk35xx-common`), só como opção local do usuário.
+
+### Animação de boot
+
+A animação com log ao vivo do Android 12 (`android/bootlog`) entra no build pelo próprio repositório
+(`vendor/hy300/hy300-rk3566/android/bootlog/Android.bp`), versão **Java** neste primeiro build,
+com o mesmo `Main.java` e script/rc próprios do Android 17 em `android/bootlog/lineage/`:
+
+- tudo no `/product`: `framework/hy300-bootlog.jar` (o dex compilado pelo build, `java_library`),
+  `media/bootlog/{bootlog.sh,logo.png}`, `etc/init/hy300-bootlog.rc` e
+  `media/hy300-bootlog.zip`;
+- o rc redefine o serviço `bootanim` com `override` (o `/product` é lido depois do `/system`);
+- o zip de 1 quadro (o logo, 300x297, centralizado) é gerado no build (`genrule` com
+  `soong_zip -L 0`) e escolhido por `ro.product.bootanim.file`, sem mexer no
+  `bootanimation.zip` do Lineage (que fica no `/product/media` como fallback);
+- diferenças do Android 17: caminho do ART `lib64` (só 64 bits), `classpath` do
+  `derive_classpath` no mesmo `/data/system/environ/classpath`; o tamanho vem do modo do conector
+  DRM ligado (`/sys/class/drm/card*-*/modes`, 1024x600 no HY300), não mais 1280x720 fixo.
+
+Segue valendo: sai em `boot_progress_enable_screen` ou na transição 0→1 de
+`service.bootanim.exit`, limite de 180 s pelo relógio monotônico, e se a VM não subir fica o
+`bootanimation` nativo. O log só aparece quando o ART sobe (~20 s); a versão nativa em C++
+(libgui + Skia, sem `app_process`) é o próximo passo. A cmdline não ganhou `console=tty0`/fbcon.
+
+### Artefatos
+
+(preenchido no fim do build)
+
+### Gravar pelo Alpine
+
+O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com
+`hy300-android` (`reboot(RESTART2, "recovery")`). Então o `boot.img` do Lineage vai na
+**`recovery`**, e a `boot` (Alpine) não muda. No PC, com o IP do Alpine:
+
+```sh
+cd ~/hy300-handoff/hy300-alpine
+OUT=~/android/lineage/out/target/product/hy300
+# 0) backup do que vai mudar (o de fábrica já está em ~/hy300-backup)
+scripts/hy300-backup.sh <IP> ~/hy300-backup/antes-lineage-$(date +%F) super recovery misc metadata cache
+# 1) super: sparse -> cru, tem que dar exatamente 3.263.168.512 bytes
+~/android/lineage/out/host/linux-x86/bin/simg2img $OUT/super.img ~/hy300-work/super-lineage.raw
+stat -c %s ~/hy300-work/super-lineage.raw
+scripts/hy300-flash-partition.sh <IP> super ~/hy300-work/super-lineage.raw
+# 2) boot.img do Lineage na recovery
+scripts/hy300-flash-partition.sh <IP> recovery $OUT/boot.img
+```
+
+No aparelho (SSH no Alpine), metadata e userdata limpos (autorizado: o `/data` do Android 12 tem
+FBE v1 e não serve):
+
+```sh
+dd if=/dev/zero of=/dev/block/by-name/metadata bs=1M          # 16 MiB, inteira
+dd if=/dev/zero of=/dev/block/by-name/userdata bs=1M count=64  # some o superbloco
+sync
+hy300-android                                                   # reboot para a recovery = Lineage
+```
+
+O `fstab.rk3566` marca `/metadata` e `/data` como `formattable`: com o superbloco zerado, o
+primeiro estágio formata o `/metadata` (ext4) e o `mount_all` formata o `/data` (ext4, liga
+`encrypt` e `quota` sozinho pelo `tune2fs`, FBE v2 `aes-256-xts:aes-256-cts:v2`,
+`reservedsize=128M`, `checkpoint=block`, sem casefold/projid). Se preferir formatar pelo Alpine:
+
+```sh
+mkfs.ext4 -F -L metadata -b 4096 /dev/block/by-name/metadata
+mkfs.ext4 -F -L userdata -b 4096 -O encrypt,quota /dev/block/by-name/userdata
+```
+
+Não é f2fs: o fstab do Lineage usa ext4 nas duas, como a fábrica. A `cache` (ext4 de fábrica)
+fica como está.
+
+Voltar ao Android 12: gravar `~/hy300-backup/super.img` (descomprimido) na `super`, o
+`~/hy300-backup/recovery.img` na `recovery` e zerar `metadata`/`userdata` do mesmo jeito.
+
+### Riscos do primeiro boot
+
+| Risco | Sinal | O que fazer |
+|---|---|---|
+| U-Boot não descomprime o `Image.gz` de um boot.img Android | logo parado, ventoinha não liga | o Alpine já provou `Image.gz` na `boot`; se falhar na `recovery`, gerar boot.img com a `Image` crua (cabe nos 108 MiB da `recovery`) |
+| Primeiro estágio não acha a `super` | reboot para o U-Boot/Alpine pelo contador de boots falhos | conferir `androidboot.boot_devices=fe310000.sdhci` contra `/sys/devices/platform` no Alpine |
+| Panfrost/Mesa não sobe | SurfaceFlinger reiniciando, tela preta depois do logo | `adb logcat` por cabo de rede (`adb connect`); plano B: `ro.hardware.egl` vazio e renderização por software só para diagnosticar |
+| drm_hwcomposer no VOP2 do BSP | tela preta com SurfaceFlinger vivo | `dumpsys SurfaceFlinger`, `modetest` no Alpine |
+| KeyMint por software + FBE | vold falha, volta para a recovery do Lineage pedindo para formatar | formatar `/data` de novo; conferir o serviço KeyMint no logcat |
+| Codec2 em buffer mode | vídeo verde/borrado ou cai para `c2.android.*` | `dumpsys media.player`, logcat `C2RKMpiDec`; desligar com `media_codecs` vazio |
+| 1,5 GB de RAM | launcher recarregando | ajustar lmkd/zram depois de medir |
+| Seccomp do Codec2 (política do Android 14 no 17) | serviço c2 morre ao iniciar | logcat `minijail`; ajustar a política |
+
+### O que falta
+
+- **Wi-Fi**: depende do driver AIC8800 no kernel Android (outro trabalho). Quando funcionar: módulos
+  em `prebuilt/modules`, firmware (blob, só local), `wpa_supplicant` e HAL Wi-Fi (`BOARD_WLAN_DEVICE`).
+- **Áudio**: HAL AIDL de referência com tinyalsa no card 0. Sem ele não há som.
+- **Widevine** (acima), Bluetooth, sensores (SC7A20), IR (keylayout já existe).
+- **Vídeo 10 bits e encoders** no caminho do minigbm; Codec2 sem cópia (importar os buffers do
+  minigbm direto no MPP) depois de medir.
+- **sepolicy** própria e SELinux enforcing.
+- **Keystone** no SurfaceFlinger, app de configurações como app de plataforma, entrada HDMI.
+- **bootlog nativo** (C++), recovery do Lineage, OTA.
 
 ## Resumo das decisões
 
