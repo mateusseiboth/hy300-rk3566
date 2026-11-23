@@ -889,8 +889,8 @@ conferem"), `check_vintf_hals.py` ("11 HALs obrigatórios declarados; todo HAL d
 serviço no init"), `verify-boot` nos quatro boot.img, 152 testes da árvore, nenhuma priv-app fora
 do allowlist. Kernel `cae418b6c490`.
 
-Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 7 em `r7/`), com GApps. O `boot.img`, o
-`boot-uso.img` e o `boot-sw.img` são os da rodada 7 (o ramdisk não mudou):
+Artefatos em `~/hy300-work/lineage-artifacts/r8/` (substituídos pela rodada 9), com GApps. O
+`boot.img`, o `boot-uso.img` e o `boot-sw.img` são os da rodada 7 (o ramdisk não mudou):
 
 | Arquivo | Tamanho | sha256 |
 |---|---|---|
@@ -926,6 +926,60 @@ Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 7 em `r7/`), com GApps. O
   cores erradas.
 - Continuam da rodada 6/7: encoders e entrada por Surface, zram pelo `mmd`, gatilho
   `debug.hy300.alpine`, perfil `uso`.
+
+### Rodada 9: imagem da entrada HDMI e espelhamento (23/11/2026)
+
+Segundo merge da branch `recursos` (árvore `f0266a8`, este repositório `13cb1b6`): serviço
+`vendor.hy300.hdmiin-service` (AIDL `vendor.hy300.hdmiin.IHdmiCapture` V1 congelado) que captura o
+`/dev/video` do rkisp e copia pela RGA para a `Surface` do `TvView`; app `HY300HdmiInput`
+(`io.github.hy300.hdmi`, priv-app no system_ext) como TV input de hardware do HDMI;
+`configs/vintf/device_framework_matrix.xml` para o HAL novo; patch `frameworks/native/0002` (só
+testes do keystone); no app de configurações, o modo de instalação zera o espelho nativo e o "Abrir
+HDMI". Detalhes em [`lineage-recursos.md`](lineage-recursos.md).
+
+O que o Soong pegou e foi corrigido (commit `0ca3960`):
+
+- o `aidl_api` congelado estava em `hdmiin/aidl/aidl_api`; o Soong procura ao lado do
+  `Android.bp` (`hdmiin/aidl_api`). Mudou só de lugar; o hash congelado (`ced0fd31…`) passou;
+- o namespace da árvore passa a importar `hardware/rockchip/librga`;
+- o serviço linka o `libhy300tvinput_core` (biblioteca estática não leva as dependências estáticas
+  dela), inclui `libnativebase_headers`, `libsystem_headers` e `libcutils_headers` (o
+  `vndk/window.h` precisa) e passa o pedido do `ioctl` como `int` (assinatura do bionic, que
+  quebrava no `-Wshorten-64-to-32`);
+- `tools/apply_patches.py`: patches empilhados (`codec2/0005` sobre o 0002,
+  `frameworks/native/0002` sobre o 0001) faziam o script parar com "não encaixa", porque o de
+  baixo não se desfaz sozinho com o de cima aplicado. Agora a série é desfeita de trás para a
+  frente numa cópia dos arquivos tocados para saber o que já está aplicado (teste novo).
+
+Conferências: `check_sepolicy.py` ("sepolicy compila com as neverallows do build e os contextos
+conferem"), `check_vintf_hals.py` ("11 HALs obrigatórios declarados; todo HAL declarado tem
+serviço no init"; o `vendor.hy300.hdmiin` está no manifesto do vendor e na matriz), `verify-boot`
+nos quatro boot.img, 168 testes da árvore, nenhuma priv-app fora do allowlist (o `HY300HdmiInput`
+traz o `privapp-permissions-hy300-hdmi.xml`). Kernel `cae418b6c490`; SELinux permissive;
+Bluetooth ligado; GApps.
+
+Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 8 em `r8/`). `boot.img`, `boot-uso.img` e
+`boot-sw.img` iguais aos das rodadas 7 e 8:
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` | 19.890.176 | `55bebe21d952150bd466eecb85ed0c31a63ee2a0a8cfaa53540fc1bcd60efe65` |
+| `boot-uso.img` | 19.890.176 | `47be28acfe3c1c89ad7756acac54ee7d015da830eccaf0ba7c219fd4e72ea2c3` |
+| `boot-sw.img` | 19.890.176 | `638f1b676bd5e49b20d77dcdaa0abebf4fb7f95edd54c89509087dcd41a9d378` |
+| `recovery.img` | 32.622.592 | `cddd11c512275b3f859d7774349eb6a7b83218a4a20a676ed2016021a3d179b3` |
+| `super.img` (sparse) | 1.876.717.576 | `7c16f6601cc599864f089ca8ee95b94d419d195b9c62813ed5e942bf93be0427` |
+| `super.raw` | 3.263.168.512 | `e934c9415d1ae4efc0cd96a5fab00f205b5101af8eaf9d2f73a7bb7846acb9cb` |
+
+A conferir no aparelho, além da lista da rodada 8:
+
+- **HDMI com imagem**: `dumpsys tv_input` mostra a entrada "HDMI"; o app HDMI (launcher ou "Abrir
+  HDMI") mostra a fonte em tela cheia, com keystone e BCSH; trocar a resolução da fonte não trava.
+  Se o serviço não achar o vídeo, conferir o nome do nó (`rkisp_mainpath` contra `rkisp-vir0` em
+  `/sys/class/video4linux/*/name`) e trocar `ro.vendor.hy300.hdmiin.video`. Áudio: a placa
+  `rockchiphdmiin` tem de ser a 1 (`cat /proc/asound/cards`).
+- **Espelhamento**: cada modo de instalação (mesa/teto, frente/trás) espelha uma vez só; um app
+  de espelhamento (AirScreen, Cast) também recebe o keystone.
+- Negações de SELinux dos domínios novos (`hy300_hdmiin`, `hy300_hdmi_app`).
 
 ### Gravar pelo Alpine
 
