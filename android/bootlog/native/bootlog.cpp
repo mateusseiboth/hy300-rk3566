@@ -30,14 +30,12 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <deque>
 #include <map>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <vector>
 
 #include "bootlog_model.h"
@@ -167,14 +165,6 @@ Rgb colorFor(hy300::bootlog::LineKind kind) {
     }
 }
 
-void readLog(BootModel* model, std::atomic<bool>* running) {
-    FILE* in = popen("logcat -b all -v brief", "r");
-    if (!in) return;
-    char line[1024];
-    while (running->load() && fgets(line, sizeof(line), in)) model->addLine(line);
-    pclose(in);
-}
-
 void drawFrame(Canvas& canvas, BootModel& model, Font& mono, Font& header, const Image& logo, int shownProgress) {
     const int W = canvas.width, H = canvas.height;
     canvas.fill(0, 0, W, H, {8, 6, 16});
@@ -231,10 +221,12 @@ int main(int argc, char** argv) {
     Image logo;
     loadPng(argv[3], &logo);
 
-    BootModel model;
-    std::atomic<bool> running(true);
-    std::thread reader(readLog, &model, &running);
-    reader.detach();
+    // O leitor do logcat é dono de uma referência ao modelo: no boot 2 a thread usava um
+    // BootModel da pilha do main depois do return e o processo saía com SIGSEGV.
+    auto modelRef = std::make_shared<BootModel>();
+    BootModel& model = *modelRef;
+    FILE* log = popen("logcat -b all -v brief", "r");
+    if (log) hy300::bootlog::startLogReader(modelRef, log);
 
     bool sawZero = base::GetProperty("service.bootanim.exit", "0") != "1";
     bool readySignaled = false;
@@ -246,7 +238,7 @@ int main(int argc, char** argv) {
         if (uptimeMillis() > deadline) break;
 
         ANativeWindow_Buffer buffer;
-        if (ANativeWindow_lock(window, &buffer, nullptr) != 0) return readySignaled ? 0 : 7;
+        if (ANativeWindow_lock(window, &buffer, nullptr) != 0) _exit(readySignaled ? 0 : 7);
         Canvas canvas{static_cast<uint32_t*>(buffer.bits), buffer.width, buffer.height, buffer.stride};
         shownProgress = hy300::bootlog::stepProgress(shownProgress, model.progress());
         drawFrame(canvas, model, mono, header, logo, shownProgress);
@@ -258,7 +250,8 @@ int main(int argc, char** argv) {
         }
         usleep(kFrameMs * 1000);
     }
-    running = false;
     SurfaceComposerClient::Transaction().hide(control).apply();
-    return 0;
+    // Sai sem destrutores globais nem esperar a thread do logcat, que segue bloqueada no fgets.
+    fflush(stdout);
+    _exit(0);
 }

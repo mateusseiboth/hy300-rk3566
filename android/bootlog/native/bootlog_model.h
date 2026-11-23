@@ -8,6 +8,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdio>
+#include <memory>
 #include <deque>
 #include <mutex>
 #include <string>
@@ -47,5 +49,9 @@ class BootModel {
     int progress_ = 0;
     bool screenEnabled_ = false;
 };
+
+// Lê linhas de "in" numa thread desligada até o fim do arquivo e as passa ao modelo. A thread
+// guarda a própria referência ao modelo: quem chamou pode sair sem esperar por ela.
+void startLogReader(std::shared_ptr<BootModel> model, FILE* in);
 
 }  // namespace hy300::bootlog

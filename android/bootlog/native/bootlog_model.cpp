@@ -5,6 +5,7 @@
 #include "bootlog_model.h"
 
 #include <algorithm>
+#include <thread>
 
 namespace hy300::bootlog {
 
@@ -99,6 +100,14 @@ int BootModel::progress() const {
 bool BootModel::screenEnabled() const {
     std::lock_guard<std::mutex> guard(lock_);
     return screenEnabled_;
+}
+
+void startLogReader(std::shared_ptr<BootModel> model, FILE* in) {
+    std::thread([model = std::move(model), in]() {
+        char line[1024];
+        while (fgets(line, sizeof(line), in)) model->addLine(line);
+        fclose(in);
+    }).detach();
 }
 
 }  // namespace hy300::bootlog

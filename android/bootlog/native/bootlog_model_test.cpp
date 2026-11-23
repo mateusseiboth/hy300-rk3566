@@ -8,12 +8,19 @@
  */
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cstdio>
+#include <memory>
+#include <thread>
+#include <unistd.h>
+
 #include "bootlog_model.h"
 
 using hy300::bootlog::BootModel;
 using hy300::bootlog::LineKind;
 using hy300::bootlog::classifyLine;
 using hy300::bootlog::stepProgress;
+using hy300::bootlog::startLogReader;
 
 TEST(BootModel, startsInKernelStage) {
     BootModel model;
@@ -71,4 +78,34 @@ TEST(StepProgress, approachesTargetWithoutPassingIt) {
     EXPECT_EQ(stepProgress(0, 60), 10);
     EXPECT_EQ(stepProgress(98, 100), 99);
     EXPECT_EQ(stepProgress(100, 40), 100);
+}
+
+// No boot 2 o bootlog nativo deu SIGSEGV ao sair: a thread do logcat (desligada) usava o
+// BootModel que vivia na pilha do main. O leitor agora é dono de uma referência ao modelo.
+TEST(LogReader, keepsModelAliveAfterOwnerDropsIt) {
+    int fds[2];
+    ASSERT_EQ(pipe(fds), 0);
+    FILE* in = fdopen(fds[0], "r");
+    ASSERT_NE(in, nullptr);
+    auto model = std::make_shared<BootModel>();
+    std::weak_ptr<BootModel> watch = model;
+    startLogReader(model, in);
+    model.reset();
+    EXPECT_FALSE(watch.expired());
+
+    const char line[] = "I/boot_progress_enable_screen(  1): 2\n";
+    ASSERT_EQ(write(fds[1], line, sizeof(line) - 1), static_cast<ssize_t>(sizeof(line) - 1));
+    for (int i = 0; i < 200; ++i) {
+        auto alive = watch.lock();
+        if (alive && alive->screenEnabled()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    auto alive = watch.lock();
+    ASSERT_NE(alive, nullptr);
+    EXPECT_TRUE(alive->screenEnabled());
+    alive.reset();
+    close(fds[1]);
+    for (int i = 0; i < 200 && !watch.expired(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    EXPECT_TRUE(watch.expired());  // fim do pipe: a thread sai e solta o modelo
 }
