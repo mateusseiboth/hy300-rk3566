@@ -123,19 +123,47 @@ endereço; o TvInputHardwareManager pede o patch HDMI In para a saída e o audio
 ponte por software. Confirmar no aparelho que a placa é a 1 e a taxa da fonte
 (`/sys/class/hdmirx/rk628/audio_rate`): a porta aceita 32, 44,1 e 48 kHz.
 
-**Imagem, o que falta:** o TV input AIDL só entrega sideband, e o drm_hwcomposer não compõe
-sideband (o SurfaceFlinger desenha preto). Além disso uma camada sideband não passa pela
-composição pelo cliente, onde o keystone é aplicado. Caminhos:
+**Imagem (rodada 9):** a rota do sideband não serve: o drm_hwcomposer não compõe sideband
+(sai preto) e uma camada sideband fugiria do keystone. A imagem vem por outro caminho, que faz
+dela uma camada comum do SurfaceFlinger (keystone e BCSH valem, como na fábrica com o
+`rkCamera3`):
 
-1. **Recomendado:** serviço do vendor que captura o V4L2 e copia (RGA) para uma `Surface` entregue
-   por um `TvInputService` do app (sessão com `onSetSurface`), por uma interface AIDL estável
-   própria. A imagem vira camada comum: keystone e BCSH funcionam, como na fábrica (o app
-   `rkCamera3` usava a câmera, não sideband).
-2. Sideband no drm_hwcomposer (importar os dma-buf do V4L2 num plano NV12): sem custo de GPU, mas
-   sem keystone.
+```
+RK628 -> rkisp /dev/videoN (NV12, MMAP + EXPBUF) -> vendor.hy300.hdmiin-service -> RGA (NV12 -> RGBA)
+   -> Surface do TvView (BufferQueue do app) -> SurfaceFlinger (keystone) -> VOP2 (BCSH)
+```
 
-Nos dois casos falta um `TvInputService` no app (APIs de sistema, permissão
-`TV_INPUT_HARDWARE`); o build do app pelo Gradle usa só o SDK público.
+- `hdmiin/` (árvore do aparelho): HAL próprio `vendor.hy300.hdmiin.IHdmiCapture` (AIDL estável,
+  V1 congelada): `getSignal()`, `startPreview(Surface)`, `stopPreview()`. Fila curta (4 buffers na
+  captura, 3 na janela), sempre o quadro mais novo, cópia só pela RGA, recomeço sozinho quando a
+  fonte muda de resolução. Lógica testada no host com um V4L2 falso.
+- `apps/HdmiInput` (app de sistema `io.github.hy300.hdmi`, só no LineageOS porque usa APIs de
+  sistema): TV input de hardware para o HDMI que o HAL de TV input anuncia (entrada "HDMI" no
+  seletor de entradas), tela cheia com `TvView` (abre pelo launcher, pelo "Abrir HDMI" deste app e
+  pelo `ACTION_VIEW` de passthrough do seletor) e o patch de áudio "HDMI In" -> alto-falante
+  enquanto a entrada está aberta (como o `TvInputHardwareManager` faz).
+- O HAL de TV input continua só para anunciar o dispositivo e o cabo.
+
+## Espelhamento
+
+**Projeção traseira e de teto.** O modo de instalação (`persist.txcz.install.model` 0 a 3: mesa
+frente, mesa trás, teto frente, teto trás) espelha pelos cantos, como o app TXCZ: o canto da imagem
+vai para o canto oposto do painel e a homografia desenha a imagem espelhada (testes no app,
+`InstallModeMirrorTest`, e no SurfaceFlinger, patch `frameworks/native/0002`). O espelho nativo
+`persist.sys.keystone.mirror_x/mirror_y` também combina com a homografia no SurfaceFlinger; o app
+grava os dois em 0 para não espelhar duas vezes.
+
+**Conteúdo espelhado de outro aparelho** (AirScreen, Cast, Miracast) é um app no display principal:
+o keystone vale. Conferido no código que nada escapa:
+
+- com keystone, o `Output` força a composição pelo cliente em toda camada do display
+  (`OutputLayer::writeCompositionTypeToHWC` manda CLIENT), inclusive cursor, camadas "peek-through"
+  do planner e sideband; teste da CompositionEngine no patch 0002;
+- o drm_hwcomposer não pode promover CLIENT para plano (`MustBeClientComposited`; o
+  `UnderlayMapper` só mexe em camadas DEVICE);
+- o vídeo em túnel (sideband do decodificador direto ao compositor) só é pedido quando o codec
+  anuncia `tunneled-playback`; nenhum `media_codecs` anuncia (teste `test_no_video_bypass.py`);
+- camada sideband com keystone ligado sai preta, não sem correção.
 
 ## Vídeo 10 bits
 

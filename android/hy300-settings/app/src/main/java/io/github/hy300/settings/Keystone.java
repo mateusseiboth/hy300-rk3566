@@ -40,6 +40,9 @@ public final class Keystone {
 
     public static final String P_PREFIX = "persist.sys.keystone.";
     public static final String P_UPDATE = "persist.sys.keystone.update";
+    /** Espelho nativo da librkgfx_dc e do SF do LineageOS: o modo de instalação espelha pelos cantos. */
+    public static final String P_MIRROR_X = "persist.sys.keystone.mirror_x";
+    public static final String P_MIRROR_Y = "persist.sys.keystone.mirror_y";
     public static final String P_MODE = "persist.txcz.install.model";
     public static final String P_ZOOM = "persist.txcz.trapezoid.zoom";
     public static final String P_TRAP_MODE = "persist.txcz.trapezoid.mode";
@@ -238,6 +241,10 @@ public final class Keystone {
             int[] v = corner(c);
             m.put(P_PREFIX + CORNER_KEYS[c], v[0] + "," + v[1]);
         }
+        // O espelho do modo de instalação já está nos cantos (base); o nativo fica desligado para
+        // não espelhar duas vezes.
+        m.put(P_MIRROR_X, "0");
+        m.put(P_MIRROR_Y, "0");
         m.put(P_MODE, String.valueOf(mode));
         m.put(P_ZOOM, String.valueOf(zoom));
         m.put(P_TRAP_X, String.valueOf(trapV));
