@@ -718,7 +718,7 @@ privilegiadas conferidas no host (aapt2 contra o `AndroidManifest.xml` do framew
 `privapp-permissions` da imagem): nenhuma priv-app pede permissão privilegiada fora do allowlist
 (o GmsCore pede 106, as 106 estão no XML do MindTheGapps).
 
-Com GApps, em `~/hy300-work/lineage-artifacts/` (rodada 5 em `r5/`):
+Com GApps, em `~/hy300-work/lineage-artifacts/r6/` (substituídos pela rodada 7, abaixo):
 
 | Arquivo | Tamanho | sha256 |
 |---|---|---|
@@ -728,7 +728,7 @@ Com GApps, em `~/hy300-work/lineage-artifacts/` (rodada 5 em `r5/`):
 | `super.img` (sparse) | 1.885.061.212 | `10d2275e29363065a2bf0a0e6499fe0a66f8e9830ed9fbea15f05e7cca0d77aa` |
 | `super.raw` (vai na `super`) | 3.263.168.512 | `0951489ec4f8c002ed4c91b633d3a6107379c81672dcbcb46fdb37f3f7b959df` |
 
-Sem GApps (`HY300_WITH_GAPPS=false`), em `r6-sem-gapps/`; o `boot.img` e o `boot-sw.img` são os
+Sem GApps (`HY300_WITH_GAPPS=false`), em `r6/sem-gapps/`; o `boot.img` e o `boot-sw.img` são os
 mesmos:
 
 | Arquivo | Tamanho | sha256 |
@@ -749,15 +749,85 @@ Antes de gravar:
   `wifi.conf` é apagado depois de usado e precisa ser gravado de novo (roteiro em "Rodada 5").
 - **Fuso**: `persist.sys.timezone` só vale num `/data` novo. Num `/data` que já existe o valor
   gravado (UTC) vence; troque em Configurações > Sistema > Data e hora (ou apague o `/data`).
-- Sem GApps (`r6-sem-gapps/`) dá para gravar por cima do `/data` do boot 4.
+- Sem GApps (`r6/sem-gapps/`) dá para gravar por cima do `/data` do boot 4.
 
 YouTube para Android TV (`com.google.android.youtube.tv`): não vem na minimal. Não há fonte com
 hash publicado fora do Google Play; a forma confiável é instalar pela Aurora Store depois do boot
 (ela baixa do Google Play, com a assinatura do Google conferida pelo Android na instalação), sem
 precisar de conta (sessão anônima da Aurora).
 
-Fica para a rodada 7: a imagem "de uso" (diag desligado, adb pela rede desligado por padrão e
-ligável pelo app ou pelas opções de desenvolvedor), com a de teste como hoje.
+### Rodada 7: imagem de uso e ida ao Alpine pelo adb (23/11/2026)
+
+**Perfil na cmdline**, `androidboot.hy300.perfil`:
+
+| Perfil | Arquivo | Diag | adb pela rede |
+|---|---|---|---|
+| `teste` (padrão do build) | `boot.img` | ligado (com `androidboot.hy300.diag=1` ou o arquivo `ativo`) | ligado sozinho no boot_completed (porta 5555, com chave) |
+| `uso` | `boot-uso.img` | desligado, mesmo com `diag=1` ou `ativo` | desligado; o usuário liga nas Opções do desenvolvedor do TvSettings: "Depuração USB" e "ADB pela rede" |
+
+A `super` é a mesma nos dois: o `boot-uso.img` é o `boot.img` com a chave trocada por
+`tools/lineage_prebuilt.py variant --set androidboot.hy300.perfil=uso` (o ID do header é
+recalculado). Nos dois perfis o `hy300-net.sh` continua aplicando o `wifi.conf` e a chave do adb
+que o Alpine deixar no `/metadata`; no de uso ele só não liga o adb. Para ir de um perfil ao outro
+basta gravar o outro `boot.img` na `recovery` (ou trocar a chave pelo `hy300-kexec` do Alpine).
+O "ADB pela rede" do TvSettings seta `service.adb.tcp.port`, que não sobrevive a um reboot: na
+imagem de uso ele precisa ser religado depois de reiniciar.
+
+**Ir ao Alpine e ficar nele, com o Lineage no ar e sem adb root:**
+
+```bash
+adb shell setprop debug.hy300.alpine 1
+```
+
+- O shell do adb pode setar `debug.*` (`debug.` é `debug_prop` no `property_contexts`, e o
+  `shell.te` tem `set_prop(shell, debug_prop)`); apps comuns não podem.
+- O `init.rk3566.rc` inicia o serviço `hy300-alpine` (root, `u:r:su:s0`, oneshot) em
+  `on property:debug.hy300.alpine=1 && property:ro.build.type=userdebug && property:init.svc.adbd=running`.
+  Na imagem de uso isso só vale depois de o usuário ligar o adb.
+- `configs/init/hy300-alpine.sh` volta a prop para 0, grava a marca de ficar na `misc` (0x10000,
+  `hy300-ficar\0` + `01 00 00 00`, a mesma função do diag) só se a área estiver zerada ou já com a
+  marca, confere lendo de volta, faz `sync` e reboot normal (`sys.powerctl=reboot`, sem alvo, sem
+  BCB). O U-Boot sobe a `boot`, o estágio 1 do Alpine vê a marca, apaga e fica sem contagem.
+- Se a área da marca tiver outra coisa, não reinicia e registra em
+  `/metadata/hy300-diag/alpine.txt`.
+- Quando a sepolicy ficar enforcing (worker de recursos), o domínio `su` só existe no userdebug;
+  o serviço continua restrito ao userdebug pelo gatilho.
+
+Texto proposto para o `README.md` do hy300-alpine, seção "Marca de ficar e contador de boots
+falhos (misc)", logo depois do bloco do `reboot-to-alpine.sh`:
+
+> - **Com o LineageOS no ar** não há `adb root` (o userdebug do Lineage sai com
+>   `ro.debuggable=0`), então o `reboot-to-alpine.sh` não grava a `misc`. O Lineage do HY300 tem
+>   um gatilho próprio:
+>
+>   ```bash
+>   adb shell setprop debug.hy300.alpine 1
+>   ```
+>
+>   Um serviço root do Lineage (só no userdebug e com o adbd no ar) grava a mesma marca em
+>   `0x10000`, com a mesma regra (só sobre área zerada ou já marcada), e faz um reboot normal. O
+>   Alpine sobe pela `boot` e fica. Se a área tiver outra coisa, o Lineage não reinicia e registra
+>   em `/metadata/hy300-diag/alpine.txt`. Voltar ao Lineage: `hy300-android` no Alpine.
+
+Sugestão para o mesmo repositório (não aplicada): o `reboot-to-alpine.sh` pode tentar esse gatilho
+quando `adb root` falhar, para o mesmo comando servir nos dois sistemas.
+
+Artefatos da rodada 7 em `~/hy300-work/lineage-artifacts/` (rodada 6 em `r6/`), com GApps, kernel
+`1ee24ab83ac1` (sem prebuilt novo). `verify-boot` passa nos quatro boot.img;
+`check_vintf_hals.py`: "11 HALs obrigatórios declarados; todo HAL declarado tem serviço no init";
+115 testes da árvore passam; nenhuma priv-app fora do allowlist.
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` (perfil `teste`, vai na `recovery`) | 19.888.128 | `83f9859659f15822a750d9df84cb763239bf62ec852dcf1b97035ba1f88edeb3` |
+| `boot-uso.img` (perfil `uso`) | 19.888.128 | `c4c18b49ca857ddcf84b833fc0e10e742ca19f8b32925d6bbe6c8a6ddbb218c3` |
+| `boot-sw.img` (perfil `teste`, `gpu=sw`) | 19.888.128 | `849439d71c4cf011771838717d3dde949b68f60b5f5b0111c2fa090407e19e62` |
+| `recovery.img` | 32.614.400 | `f86da881addb4325e5875dd5962eab4a550b7974e4b61edcc27e386576229b49` |
+| `super.img` (sparse) | 1.885.065.308 | `f9f4f71a5c9d55c9519405afe2eefc17291072cb9122abffba440e42a7542773` |
+| `super.raw` (vai na `super`) | 3.263.168.512 | `8c9e4eff0296e12fe5f8ecc584a33ff18903494c4aa53667641cc5d9a62a2e57` |
+
+Valem os mesmos avisos da rodada 6 para gravar com GApps (apagar o `/data`, `wifi.conf` de novo,
+fuso num `/data` antigo).
 
 ### Gravar pelo Alpine
 
