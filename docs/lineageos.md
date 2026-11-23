@@ -1,8 +1,9 @@
 # LineageOS 24.0 (Android 17) no HY300: inventário, decisões e plano
 
-Estado em 22/11/2026 (noite): árvore integrada em `~/android/lineage/device/txcz/hy300` (GitHub
-`mateusseiboth/android_device_hy300_rk3566`, branch `lineage-24.0`), `lunch` passa e o build está
-em andamento com GPU aberta (Panfrost) e vídeo por hardware (Codec2 + MPP). Como compilar, onde
+Estado em 23/11/2026: **primeiro build completo** do LineageOS 24.0 TV para o HY300, com GPU
+aberta (Panfrost) e vídeo por hardware (Codec2 + MPP). Árvore em
+`~/android/lineage/device/txcz/hy300` (GitHub `mateusseiboth/android_device_hy300_rk3566`, branch
+`lineage-24.0`). Nada foi gravado no aparelho. Como compilar, onde
 ficam os artefatos, como gravar pelo Alpine e os riscos estão em "Build e primeiro boot", logo
 abaixo. O inventário e as decisões de antes seguem nas seções seguintes.
 
@@ -61,8 +62,10 @@ dependencies` dos `out/soong/build.*.ninja`; fora testes, nenhum pode sobrar.
 aberta, o primeiro `m` ficou mais de uma hora em swap, com ~1 min de CPU a cada 10. Ele foi
 interrompido e relançado com `GOMEMLIMIT=20GiB` e `SOONG_INCREMENTAL_ANALYSIS=false` (sem
 `--incremental-build-actions`), e travou do mesmo jeito: o heap vivo passa do que sobra da RAM.
-Por isso a poda acima. Durante o build há um
-swap temporário de 16 GB em `/mnt/hd/swap-build` (fora do fstab), removido no fim.
+Por isso a poda acima. Durante o build houve swap
+temporário: 16 GB em `/mnt/hd/swap-build` e um `zram1` de 16 GB (zstd, prioridade 50), os dois
+fora do fstab e removidos no fim. O que destravou a análise foi o `zram1`: o heap do Go comprime
+bem; com ele a análise levou ~22 min.
 
 ### O que entrou no build
 
@@ -150,8 +153,12 @@ Lineage-Rockchip (`proprietary_vendor_rockchip_rk35xx-common`), só como opção
 ### Animação de boot
 
 A animação com log ao vivo do Android 12 (`android/bootlog`) entra no build pelo próprio repositório
-(`vendor/hy300/hy300-rk3566/android/bootlog/Android.bp`), versão **Java** neste primeiro build,
-com o mesmo `Main.java` e script/rc próprios do Android 17 em `android/bootlog/lineage/`:
+(`vendor/hy300/hy300-rk3566/android/bootlog/Android.bp`), em duas versões: a **nativa em C++**
+(`native/`, `/system_ext/bin/hy300-bootlog-native`: libgui + FreeType + libpng, logcat por
+`popen`, desenha assim que o SurfaceFlinger sobe, sem ART; o estado fica em `bootlog_model`,
+testado no host com gtest, `hy300-bootlog-model-test`) e a **Java** de antes (mesmo `Main.java`).
+O `lineage/bootlog.sh` tenta a nativa; se ela não desenhar o primeiro quadro em 5 s, cai na Java
+com o `bootanimation` mostrando o logo. Nenhuma das duas foi vista rodando ainda.
 
 - tudo no `/product`: `framework/hy300-bootlog.jar` (o dex compilado pelo build, `java_library`),
   `media/bootlog/{bootlog.sh,logo.png}`, `etc/init/hy300-bootlog.rc` e
@@ -165,13 +172,37 @@ com o mesmo `Main.java` e script/rc próprios do Android 17 em `android/bootlog/
   DRM ligado (`/sys/class/drm/card*-*/modes`, 1024x600 no HY300), não mais 1280x720 fixo.
 
 Segue valendo: sai em `boot_progress_enable_screen` ou na transição 0→1 de
-`service.bootanim.exit`, limite de 180 s pelo relógio monotônico, e se a VM não subir fica o
-`bootanimation` nativo. O log só aparece quando o ART sobe (~20 s); a versão nativa em C++
-(libgui + Skia, sem `app_process`) é o próximo passo. A cmdline não ganhou `console=tty0`/fbcon.
+`service.bootanim.exit`, limite de 180 s pelo relógio monotônico (as duas versões), e se nada
+desenhar fica o `bootanimation`. Com a Java o log só aparece quando o ART sobe (~20 s). A
+cmdline não ganhou `console=tty0`/fbcon: o que se quer ver é a animação.
 
-### Artefatos
+### Artefatos (build de 23/11/2026, `lineage_hy300-cp2a-userdebug`)
 
-(preenchido no fim do build)
+Cópia estável em `~/hy300-work/lineage-artifacts/` (o `out/` muda a cada build), com
+`SHA256SUMS` e o `kernel-VERSION` do prebuilt:
+
+| Arquivo | Tamanho | sha256 | Vai para |
+|---|---|---|---|
+| `boot.img` | 19,0 MiB | `c395bf147e6dec10454377ef945a22758d621b313294689aaf7baef228b7bebf` | partição `recovery` (o Alpine fica na `boot`) |
+| `recovery.img` | 31,1 MiB | `5d4210d5d093372d8116ae07a4746a50c8b84381d66e3fa4e7c54c6f7609e589` | ainda não usar (recovery do Lineage; não há slot livre para ela agora) |
+| `super.img` (sparse) | 1246 MiB | `e66db0528539ff7ee445ad49529e90834c5a26ae7c7f0681d7acc3928117fee2` | origem do `super.raw` |
+| `super.raw` | 3.263.168.512 bytes (exato) | `b2885fefcecf90b4257678842deea75794d43aa6251b2aaab1a34ce96f514d12` | partição `super` |
+
+- `boot.img` e `recovery.img` passam no `tools/lineage_prebuilt.py verify-boot` contra o
+  `boot.img` de fábrica (header v2, endereços, página, ID do U-Boot, resource de fábrica, kernel
+  igual ao `Image.gz`). Cmdline: `console=ttyFIQ0 firmware_class.path=/vendor/etc/firmware
+  init=/init rootwait ro loop.max_part=7 printk.devkmsg=on androidboot.console=ttyFIQ0
+  androidboot.hardware=rk3566 androidboot.boot_devices=fe310000.sdhci androidboot.selinux=permissive
+  panic=5 androidboot.init_fatal_panic=true`. Ramdisk com o `init` do primeiro estágio e o
+  `fstab.rk3566`.
+- Kernel: `hy300-ack-6.1` em `9358ce442f3e` (`Image.gz` sha256 `42c2041a…2f2710`).
+- `super`: metadado 10.0, 2 slots, grupo `rockchip_dynamic_partitions` (3.258.974.208 bytes),
+  system 750 MiB, system_ext 151 MiB, product 289 MiB, vendor 60 MiB, odm 1 MiB (1,25 GB de 3,1).
+- Conferido na imagem: Mesa (`libEGL_mesa`, `libGLESv2_mesa`, `libgallium_dri` 20 MB), hwc3,
+  minigbm, Codec2 (`android.hardware.media.c2@1.1-service`, `libcodec2_rk_component`, `libmpp`,
+  `librga`), `media_codecs*.xml`, `panfrost.ko` + `modules.load`, KeyMint, APEX do Gatekeeper,
+  `HY300Settings` (priv-app) + privapp-permissions, bootlog (nativo, jar, script, zip, rc),
+  `hy300-clear-bcb.sh`, `watchdogd` no `init.rk3566.rc`.
 
 ### Gravar pelo Alpine
 
@@ -181,15 +212,14 @@ O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine
 
 ```sh
 cd ~/hy300-handoff/hy300-alpine
-OUT=~/android/lineage/out/target/product/hy300
+A=~/hy300-work/lineage-artifacts
+(cd $A && sha256sum -c SHA256SUMS)
 # 0) backup do que vai mudar (o de fábrica já está em ~/hy300-backup)
 scripts/hy300-backup.sh <IP> ~/hy300-backup/antes-lineage-$(date +%F) super recovery misc metadata cache
-# 1) super: sparse -> cru, tem que dar exatamente 3.263.168.512 bytes
-~/android/lineage/out/host/linux-x86/bin/simg2img $OUT/super.img ~/hy300-work/super-lineage.raw
-stat -c %s ~/hy300-work/super-lineage.raw
-scripts/hy300-flash-partition.sh <IP> super ~/hy300-work/super-lineage.raw
+# 1) super crua (já convertida com simg2img; 3.263.168.512 bytes, o tamanho da partição)
+scripts/hy300-flash-partition.sh <IP> super $A/super.raw
 # 2) boot.img do Lineage na recovery
-scripts/hy300-flash-partition.sh <IP> recovery $OUT/boot.img
+scripts/hy300-flash-partition.sh <IP> recovery $A/boot.img
 ```
 
 No aparelho (SSH no Alpine), metadata e userdata limpos (autorizado: o `/data` do Android 12 tem
@@ -217,6 +247,33 @@ fica como está.
 
 Voltar ao Android 12: gravar `~/hy300-backup/super.img` (descomprimido) na `super`, o
 `~/hy300-backup/recovery.img` na `recovery` e zerar `metadata`/`userdata` do mesmo jeito.
+
+### Contra bootloop (primeiro boot sem ninguém olhando)
+
+- **BCB**: `hy300-clear-bcb` (o mesmo script do `android/clear-bcb` do hy300-alpine, com o teste
+  portado para `tools/tests/test_clear_bcb.py` da árvore) roda no `post-fs-data` e no
+  `sys.boot_completed=1` e apaga só um `boot-recovery` nos 2048 bytes do `bootloader_message`.
+  Assim um "reboot recovery" ou "redefinir para a fábrica" no Lineage não prende o aparelho no
+  slot `recovery`: o próximo boot volta ao Alpine. Vale a partir do `post-fs-data`; se o Lineage
+  morrer antes disso com o BCB gravado, o U-Boot sobe a `recovery` de novo (ver panic abaixo).
+- **cmdline**: `panic=5 androidboot.init_fatal_panic=true` (mais `CONFIG_PANIC_TIMEOUT=5`,
+  `PANIC_ON_OOPS`, softlockup e hung task em panic no kernel). Erro fatal do init vira panic e
+  reboot normal em 5 s, e o U-Boot sobe a `boot` (o Alpine). O `init_fatal_reboot_target` não é
+  usado (bug de `sizeof` no init).
+- **Watchdog**: o kernel é o `hy300-ack-6.1` em `9358ce442f3e` (topo do branch quando o prebuilt
+  foi gerado), com `HY300_WDT_REBOOT`/`HY300_EARLY_BEACON` (CRU_GLB_RST_CON bits 1 e 4: o reset
+  do watchdog reinicia e não reseta o PMU), `DW_WATCHDOG` com pré-timeout em panic e
+  `WATCHDOG_HANDLE_BOOT_ENABLED` (o kernel alimenta até alguém abrir o `/dev/watchdog`). No
+  Lineage o `watchdogd` do AOSP (`/system/bin/watchdogd 10 20`, `oom_score_adjust -1000`,
+  classe `core`) passa a alimentar a cada 10 s com timeout de 30 s.
+- **misc 0x10000/0x10010** (marca de ficar e contador do Alpine): nada do Lineage escreve lá. O
+  layout do AOSP (`bootloader_message_core.h`) usa só os primeiros 64 KiB: BCB em 0–2 KiB,
+  vendor em 2–16 KiB, wipe package em 16–32 KiB, "system space" em 32–64 KiB (termina em
+  0x10000, exclusivo), e a árvore não muda `BOARD_RECOVERY_BLDRMSG_OFFSET`. Não há
+  `misc_writer` nem HAL de boot que use a `misc`.
+- Um laço ainda possível: se o Lineage der panic sempre no mesmo ponto, o ciclo é Alpine →
+  contagem → Lineage → panic → Alpine. O contador de falhas do Alpine só conta o próprio Alpine;
+  para parar no Alpine, `hy300-ficar`.
 
 ### Riscos do primeiro boot
 
