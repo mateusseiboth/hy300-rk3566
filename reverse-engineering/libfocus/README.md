@@ -17,6 +17,8 @@ DT (`device-tree/rk3566-hy300-txcz.dts`):
 rk_motor { compatible = "rk_motor", "usb-cam-gpio"; };
 ```
 Sem propriedades de GPIO no nó: o driver usa GPIOs fixos no código (e `hd-cam-gpios` / `ir-cam-gpios`, se houver).
+A desmontagem do Image de fábrica dá os números: fases nos gpio 146..149 (GPIO4_C2..C5), fim de curso no 153
+(GPIO4_D1). Detalhes e o driver novo do 6.1 (`hy300_focus_motor`) em `docs/kernel-6.1.md`, "Hardware da TXCZ no ACK".
 
 Símbolos (`/proc/kallsyms`): `motor_cw`, `motor_ccw`, `motor_run` (kthread), `motor_timer` (hrtimer),
 `motor_timer_interrupt`, `motor_store`, `motor_show`, `dev_attr_motor`, `motor_status`.

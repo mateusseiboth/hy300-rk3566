@@ -19,7 +19,7 @@ kernel Android da Rockchip, branch `hy300-ack-6.1` (ver "Base Android"). É a ba
 | DT, Makefile e fragmento de config | branch `hy300-ack-6.1` do `kernel-hy300-rk3566` sobre `lineage-23.2` do Lineage-Rockchip `f4f8107cf7cf` (6.1.172). Antes: branch `hy300-6.1`, commit `8b5abca` sobre `develop-6.1` `77168c8d5ab8` |
 | Script que monta tudo | `kernel/build-marco1.sh` (+ `kernel/lib-kbase.sh`) |
 | initramfs de teste | `kernel/initramfs-test/` (`init`, `hy300-test.sh`, `build.sh`) |
-| Testes | `tests/test_initramfs_misc.py`, `tests/test_dtdiff.py`, `tests/test_dtnorm.py`, `tests/test_dt_gpio_irq.py` (teclas do `gpio-keys`: pino de fábrica, tipo da IRQ e LED no mesmo pino; `HY300_PORT_DTB=<dtb>` confere o DT do porte), `tests/test_kbase.py`, `tests/test_smoke_qemu.py`, `kernel/initramfs-test/smoke-qemu.py` |
+| Testes | `tests/test_initramfs_misc.py`, `tests/test_dtdiff.py`, `tests/test_dtnorm.py`, `tests/test_dt_gpio_irq.py` (teclas do `gpio-keys`: pino de fábrica, tipo da IRQ e LED no mesmo pino; `HY300_PORT_DTB=<dtb>` confere o DT do porte), `tests/test_port_dt_hardware.py` (motor de foco, acelerômetro, Bluetooth e HDMI-in no DT do porte), `tests/test_kbase.py`, `tests/test_smoke_qemu.py`, `kernel/initramfs-test/smoke-qemu.py` |
 | Imagem | base ack: `~/hy300-work/marco1-ack/recovery-marco1.img`; base bsp: `~/hy300-work/marco1/recovery-marco1.img` (fora do repo) |
 | Wi-Fi (AIC8800D80) | commits `2b227eb`, `53fa34e` e `12e46e1` do `hy300-6.1` (no `hy300-ack-6.1`: `2011306`, `3c7ca16`, `fcca870` e `1e3aa6b`); modo `hy300.wifi=1` do `/init`; ver "Wi-Fi no 6.1" |
 
@@ -742,13 +742,87 @@ variável.
 
 | Bloco | O que há no 6.1 | Falta |
 |---|---|---|
-| Wi-Fi AIC8800 (SDIO) | `aic8800_bsp` e `aic8800_fdrv` na árvore (`CONFIG_AIC8800=m`), carregados pelo `/init` com `hy300.wifi=1` | testar no aparelho ("Wi-Fi no 6.1"); Bluetooth (`aic8800_btlpm`) não foi portado |
-| RK628 (entrada HDMI) | `VIDEO_RK628_CSI` (`drivers/media/i2c/rk628`) e `drivers/misc/rk628`, ligados no config | o nó está portado e desligado. Ligar depois que o display funcionar e conferir o caminho `csi2-dphy0` → `rkisp` |
-| Motor de foco | nada. Na fábrica o nó `rk_motor` (`usb-cam-gpio`) não tem propriedades: o driver fechado da TXCZ fixa os GPIOs no código | escrever o driver a partir de `reverse-engineering/libfocus/README.md`, mantendo `/sys/class/motor_cc` |
-| QMI8658 | sem driver. O chip nem está montado: no dmesg de fábrica o QMI8658 lê devid 0, e quem responde é o SC7A20 em `0x19` (id `0x11`) | conferir no relatório se o `gsensor` do SC7A20 aparece em `entrada` |
+| Wi-Fi AIC8800 (SDIO) | `aic8800_bsp` e `aic8800_fdrv` na árvore (`CONFIG_AIC8800=m`), carregados pelo `/init` com `hy300.wifi=1` | testar no aparelho ("Wi-Fi no 6.1"); Bluetooth: ver "Hardware da TXCZ no ACK" |
+| RK628 (entrada HDMI) | `VIDEO_RK628_CSI` (`drivers/media/i2c/rk628`) e `drivers/misc/rk628`, ligados no config; nó ligado no `hy300-ack-6.1` | testar com fonte HDMI ("Hardware da TXCZ no ACK") |
+| Motor de foco | `hy300_focus_motor` (`drivers/misc`, embutido no `hy300-ack-6.1`), `/sys/class/motor_cc/motor_cc` | testar o sentido e o fim de curso no aparelho |
+| QMI8658 | sem driver. O chip nem está montado: no dmesg de fábrica o QMI8658 lê devid 0, e quem responde é o SC7A20 em `0x19` (id `0x11`) | nada no kernel: o `GS_SC7A20` já cria `gsensor` e `/dev/mma8452_daemon` no LineageOS; falta o HAL de sensores |
 | Mali G52 | Panfrost (módulo) com devfreq | testar o devfreq e o throttling no aparelho |
 | DVFS de CPU, DDR e barramentos | CPU, DDR e GPU ligados na base ack ("DVFS") | testar no aparelho; barramentos continuam desligados |
 | NPU | `ROCKCHIP_RKNPU` | desligada também na fábrica |
+
+## Hardware da TXCZ no ACK (motor de foco, acelerômetro, Bluetooth e HDMI-in)
+
+Branch `hy300-ack-6.1` (kernel do LineageOS). Em cada item, primeiro o que a fábrica faz (DT,
+dmesg, `vendor-modules.txt` e o Image de fábrica), depois o porte. Os nós são conferidos no
+build pelo `tests/test_port_dt_hardware.py` (`build-lineage-kernel.sh`, com `HY300_PORT_DTB`).
+
+### Motor de foco (`hy300_focus_motor`)
+
+A fábrica usa um driver fechado da TXCZ (`usb-cam-gpio`, nó `rk_motor` sem propriedades). O
+kallsyms do Image de fábrica (extraído do próprio arquivo: tabelas `kallsyms_*` com
+`KALLSYMS_BASE_RELATIVE`) dá `gsv`, `motor_cw`, `motor_ccw`, `motor_run`, `motor_store`,
+`hd_camera_on_store/show`, `motor_status` e `v_out`; a desmontagem mostra:
+
+| Item | Fábrica (inferido) |
+|---|---|
+| Fases | `gsv(a,b,c,d)` escreve os gpio 146..149 (GPIO4_C2..C5) com `gpiod_set_raw_value` e espera 1,5 ms |
+| Ciclo horário (`motor_cw`) | 1000, 1100, 0100, 0110, 0010, 0011, 0001, 1001 e 0000 (meio passo) |
+| Ciclo anti-horário | a ordem inversa, terminando em 0000 |
+| Fim de curso | gpio 153 (GPIO4_D1) cru, 1 = no limite; `motor` e `hd_camera_on` mostram ele |
+| `user_cw` / `user_ccw` | 10 ciclos, sem olhar o fim de curso |
+| `aacw` / `aaccw` | 7 ciclos; no fim de curso recua em rodadas de 10 (até 3) e conta em `v_out` |
+| `aacw_end` / `aaccw_end` | anda até o fim de curso e recua |
+| `aastop` | bobinas em 0000, `v_out = 0` |
+| Escrita | `strcmp` no buffer inteiro (sem `\n`) e `kstrtoint` no fim: devolve -EINVAL sempre |
+| Controle IR | o `rk pwm remotectl` escreve o código da tecla em `motor_status`; F15 (0xB9) e F16 (0xBA) disparam 4 ciclos e mais 4 depois de 166 jiffies (HZ 300); no fim de curso recua 20 |
+| `hd-cam-gpios` / `ir-cam-gpios` | opcionais, ausentes no DT de fábrica |
+
+O driver novo (`drivers/misc/hy300_focus_motor.c`, `CONFIG_HY300_FOCUS_MOTOR=y`) mantém a ABI:
+`/sys/class/motor_cc/motor_cc/motor` (comandos acima; leitura = fim de curso) e
+`.../hd_camera_on`. Os GPIOs vêm do DT (`txcz,hy300-focus-motor`, `phase-gpios` e
+`limit-gpios`). Diferenças: a escrita devolve o tamanho, aceita `\n` no fim (`echo` funciona),
+`aastop` interrompe um movimento em andamento, `_end` para em 400 ciclos se o fim de curso não
+aparecer, e F15/F16 seguradas continuam andando (4 ciclos a cada 150 ms depois de 550 ms).
+KUnit `hy300_focus_motor_test.c` (17 casos) roda ao carregar o driver como módulo; no ACK o
+executor embutido do KUnit não é chamado pelo `init/main.c`.
+
+Para o Android: o `init` da fábrica fazia `chmod 0777` em `motor` no `sys.boot_completed`;
+o LineageOS precisa do equivalente (ou `0664 system system` e o app como system) e da regra de
+SELinux para `sysfs` desse nó. Falta no aparelho: confirmar o sentido (qual comando aproxima o
+foco) e o fim de curso.
+
+### Acelerômetro (SC7A20)
+
+Fábrica: framework de sensores da Rockchip, `gs_sc7a20` no I2C0 `0x19` (id `0x11`), sem IRQ,
+polling; QMI8658 e MMA7660 falham no probe. No porte o DT e o `CONFIG_GS_SC7A20` já eram os
+mesmos, e o boot 3 do LineageOS mostra os dispositivos de entrada `sc7a20` e `gsensor`. Nada
+mudou no kernel. Interface: `/dev/mma8452_daemon` (`GSENSOR_IOCTL_START`, `_CLOSE`,
+`_APP_SET_RATE`, `_GETDATA`, `_GET_CALIBRATION`; `include/linux/sensor-dev.h`), eventos
+`EV_ABS` (`ABS_X/Y/Z`) no input `gsensor`, e `/sys/class/sensor_class/accel_calibration`.
+O sensor só faz polling depois do `GSENSOR_IOCTL_START`. Falta um HAL de sensores no LineageOS.
+
+### Bluetooth (AIC8800D80)
+
+Fábrica: `aic8800_btlpm.ko` (do SDK), `rfkill-rk` (`bluetooth-platdata`) e HCI H4 pelo UART1
+(`ttyS1`), com o `libbt` da AICSemi no Android. O `aic8800_bsp` carrega o patch do BT junto do
+firmware do Wi-Fi (`fw_patch_table_8800d80_u02.bin`, `fw_patch_8800d80_u02.bin`; o log do
+LineageOS mostra `uart_baud 1500000`, `uart_flowctrl 1`). No porte: o UART1, o
+`bluetooth-platdata` e `BT_HCIUART_H4` já existiam; entrou o `aic8800_btlpm` (só o rfkill,
+`CONFIG_AIC8800_BTLPM=m`, do mesmo SDK GPL da Radxa), que mantém o chip ligado para o BT com o
+Wi-Fi desligado. O `libbt` da AICSemi pega o primeiro rfkill do tipo `bluetooth`, que é o
+`bt_default` do `rfkill-rk`. Interface: `/dev/ttyS1` a 1,5 Mbaud com RTS/CTS e os rfkill
+`bt_default` e `bluetooth`. Falta no aparelho: subir o HCI (`libbt` ou `btattach -B /dev/ttyS1
+-P h4 -S 1500000`) e conferir `hci0`.
+
+### Entrada HDMI (RK628)
+
+Fábrica: `rk628-csi-v4l2` no I2C1 `0x50`, MIPI CSI 4 lanes no `csi2-dphy0`, `rkisp-vir0`, e a
+placa `rockchip,hdmiin` no I2S3. No porte o nó estava desligado desde o marco 1; agora está
+ligado com as mesmas propriedades. Config já tinha `VIDEO_RK628_CSI`, o ISP, o `csi2-dphy` e o
+`VIDEO_ROCKCHIP_HDMIRX_CLASS`. Interface: `/dev/media*` e `/dev/video*` do `rkisp` (mainpath),
+o subdev do RK628 (DV timings, `audio_present`, `audio_sampling_rate`),
+`/sys/class/hdmirx/rk628/{audio_present,audio_rate}` e a placa ALSA `rockchiphdmiin` (captura).
+Falta no aparelho: probe do RK628 sem fonte, depois uma fonte HDMI (vídeo no ISP e áudio).
 
 ## Como entrar na recovery sem tocar na misc
 
