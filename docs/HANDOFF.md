@@ -127,6 +127,19 @@ Commitado (o README do app tem a tabela de estado com [testado]/[não testado] e
   já bootar pelo slot `recovery`.
 - **LineageOS 24.0 (22/11, só planejamento):** inventário, decisões (Lineage TV, FCM 8 para o 6.1, kernel Rockchip ACK 6.1.172 recomendado, header v2 com resource de fábrica e `Image.gz`, Panfrost, teste pelo pendrive), riscos e marcos em `docs/lineageos.md`; esqueleto da árvore em `~/android/device-hy300` (GitHub `mateusseiboth/android_device_hy300_rk3566`, branch `lineage-24.0`); `tools/kconfig_check.py` mede o `.config` contra o `kernel/configs`.
 
+- **Partições desde 22/11/2026 ~20h: `boot` = Alpine (repo `hy300-alpine`, imagem `boot-alpine.img`
+  16f66e67…), `recovery` = Android de fábrica com `androidboot.init_fatal_panic=true`
+  (`android-recovery.img` cb460d08…, kernel/ramdisk/resource iguais ao boot do backup
+  `estado-20261122`), `backup` = rootfs completo do Alpine.** Ligar/tirar da tomada cai no Alpine,
+  que segue sozinho para o Android em 5 s. Do PC: `hy300-alpine/scripts/reboot-to-alpine.sh`
+  (marca de uso único em 0x10000 da `misc`) leva ao Alpine e o mantém no ar com SSH; no Alpine,
+  `hy300-android` volta ao Android. Provado no aparelho: 3 boots, ida e volta, panic → reinício no
+  Alpine. Instalado no Android (overlay): `hy300-clear-bcb` (apaga `boot-recovery` da `misc`).
+  **Limitação conhecida:** o reset de hardware do watchdog (travamento sem panic) ainda DESLIGA o
+  aparelho mesmo com o `CRU_GLB_RST_CON` em 0x113; volta pelo botão de energia. O pré-timeout
+  (panic aos 30 s) cobre os travamentos em que o kernel ainda roda. O ajuste do CRU não sobrevive
+  ao reboot (chega 0x103), então cada kernel precisa aplicá-lo.
+
 ### 3. Pendências menores
 
 - `bootlog` nativo em C++ (log desde ~6 s, boot mais rápido): ver o TODO em `android/bootlog/README.md`.
