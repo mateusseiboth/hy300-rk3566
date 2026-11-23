@@ -126,6 +126,17 @@ Patches da árvore (`device/txcz/hy300/patches`, aplicados por `tools/apply_patc
    bloco `YCBCR_420_888` (NV12 no minigbm) sem bits privados. Custo: uma cópia de RGA por quadro.
 3. `librga/0001`: `librga` compilada do fonte no modo `android_ndk` do `CMakeLists.txt` (só a API
    por fd, sem o gralloc da Rockchip), que é o que o Codec2 usa.
+4. `codec2/0004` (rodada 6): **encoders com o minigbm**. O `C2RKMpiEnc` pedia
+   `RK_GRALLOC_USAGE_WITHIN_4G` e `RK_GRALLOC_USAGE_STRIDE_ALIGN_16` para os buffers de entrada e
+   alocava o buffer temporário da RGA no NV12 da Rockchip. Agora: entrada sem bits privados (toda
+   a RAM do HY300 fica abaixo de 4 GiB, então o limite de 4 GiB da RGA2 nunca morde), buffer
+   temporário `YCBCR_420_888` com uso de encoder, e quadro com stride não múltiplo de 16 passa
+   pela RGA para o buffer alinhado (o que o gralloc da Rockchip fazia na alocação). A tela que o
+   SurfaceFlinger desenha para gravação/espelhamento chega em RGBA (o minigbm resolve
+   `IMPLEMENTATION_DEFINED` para XBGR8888) e o VEPU540 lê RGBA direto.
+5. `frameworks/av/0001` (rodada 6): `CCodec::createInputSurface` falha com
+   `onInputSurfaceCreationFailed` em vez de derrubar o processo quando não há de onde tirar a
+   superfície (ver "Entrada por Surface" abaixo).
 
 `media_codecs.xml` / `media_codecs_c2_rk.xml` (vendor): decoders `c2.rk.{avc,hevc,vp9,vp8,mpeg2,
 m4v,h263}` até **1920x1088** a 60 fps. O RK3566 faz H.264/HEVC/VP9 até 4K60, mas o painel é
@@ -135,9 +146,25 @@ no máximo 1080p. Os codecs de software (`c2.android.*`) seguem disponíveis pel
 `/dev/mpp_service` e `/dev/rga` ficam `0660 system system` (o serviço roda como `mediacodec` com
 grupo `system`). No kernel, o `rk3566-box-demo-v10.dtsi` liga rkvdec, vdpu, iep, jpegd e RGA.
 
-Fica de fora por enquanto: **10 bits** (HEVC Main10, VP9 perfil 2) e **encoders**: o caminho de
-P010 e o de entrada do encoder dependem dos bits de uso do gralloc da Rockchip. AV1 não existe no
-RK3566.
+Encoders (rodada 6): `c2.rk.avc.encoder` e `c2.rk.hevc.encoder`, VEPU540, até 1920x1088 a
+60 fps, CBR/VBR, duas instâncias. Sem `media_codecs_performance.xml`: os `measured-frame-rate`
+precisam de medição no aparelho; o ponto de desempenho declarado é o do datasheet (1080p60). O
+serviço roda com seccomp, e o encoder faz chamadas que o decoder em buffer mode nunca fez
+(`mpp_buffer_import` duplica o fd com `fcntl`): a árvore instala
+`android.hardware.media.c2@1.1-extended-seccomp-policy` com `fcntl`, `dup3`, `timerfd_*`,
+`epoll_*`, `sched_getaffinity` e `uname`.
+
+**Entrada por Surface** (gravação de tela, espelhamento, scrcpy). O `CCodec` procura a superfície
+em três lugares: o InputSurface do HAL do Codec2, o OMX e, com `debug.stagefright.c2inputsurface=-1`,
+um `GraphicBufferSource` no próprio processo. O HAL da Rockchip é HIDL 1.1 e não cria InputSurface,
+e o OMX está desligado (`TARGET_SUPPORTS_OMX_SERVICE := false`): sem a prop,
+`createCompatibleInputSurface()` devolvia nulo e `createInputSurface()` chamava `getType()` nele
+(SIGSEGV em `libsfplugin_ccodec.so`, `CCodec::createInputSurface()+164`, visto com o scrcpy). A
+correção é a prop no vendor (`device.mk`), a mesma que o emulador usa; o patch `frameworks/av/0001`
+troca o crash por erro se ela faltar.
+
+Fica de fora por enquanto: **10 bits** (HEVC Main10, VP9 perfil 2): o caminho de P010 depende dos
+bits de uso do gralloc da Rockchip. AV1 não existe no RK3566.
 
 ### DRM (Netflix, Crunchyroll)
 
@@ -149,6 +176,9 @@ Crunchyroll costuma aceitar mais. Não há como subir de nível sem certificaç�
 contornar. O Widevine de fábrica é de 32 bits (Android 12, vendor 32 bits) e não roda neste
 Lineage só de 64 bits; um Widevine de 64 bits para Android 15/16 existe nos blobs do
 Lineage-Rockchip (`proprietary_vendor_rockchip_rk35xx-common`), só como opção local do usuário.
+
+Os GApps (rodada 6) **não trazem DRM**: o Widevine continua separado e continua faltando. Com
+GApps e sem Widevine, Netflix e Crunchyroll instalam pela loja e não tocam vídeo protegido.
 
 ### Animação de boot
 
@@ -526,6 +556,209 @@ desconhecidas são ignoradas; o arquivo não é executado e é recusado se não 
 400). No PC, depois do boot: `adb connect <IP>:5555` (o IP sai do DHCP; está no `net.txt` do
 próximo diag ou no roteador).
 
+### Rodada 6: encoder, entrada por Surface, GApps e memória (23/11/2026)
+
+O boot 4 (rodada 5) completou: boot_completed em menos de 3 min, Wi-Fi com DHCP, adb pela rede,
+Mesa Panfrost GLES 3.1, 1024x600 a 60 Hz, CPUs a 1,8 GHz, áudio e Codec2 (decoders) rodando,
+sem reinício depois dos 480 s. O que entrou:
+
+- **Encoders por hardware** `c2.rk.avc.encoder` e `c2.rk.hevc.encoder` (patch `codec2/0004`,
+  `media_codecs_c2_rk.xml`, seccomp estendido). Detalhes em "Vídeo por hardware".
+- **Entrada por Surface**: `debug.stagefright.c2inputsurface=-1` no vendor e o patch
+  `frameworks/av/0001`. Com isso o scrcpy e a gravação de tela não derrubam o processo, e passam a
+  poder usar o `c2.rk.avc.encoder` em vez do encoder de software (que ficava a ~109 % de CPU no
+  `media.swcodec`).
+- **Seletor "Concluir a ação usando: Configurações / Projetor"**: a `AndroidSettingsActivity` do
+  app vem desligada (ver o README do app). O item "Projetor" do TvSettings
+  (`com.android.tv.settings.SOUND`) continua: `cmd package query-activities` no boot 4 mostrou o
+  `MainActivity` como único destino da ação, e o `MainFragment.updateSoundSettings()` do TvSettings
+  mostra o item quando um app de sistema a trata.
+- **Fuso padrão** `America/Campo_Grande` (`persist.sys.timezone` no product).
+- **Assistente de configuração**: o `LineageSetupWizard` não cabe em 1024x600 (botões fora da tela)
+  e saiu da imagem; no lugar entra o `TvProvision` do AOSP (`device/google/atv`), que só marca
+  `device_provisioned` e `user_setup_complete` e se desativa. O `Updater` também saiu (não há OTA
+  para este aparelho, e ele ficava residente com 13 a 15 MB). Os dois saem pelo módulo
+  `hy300-package-overrides` da árvore (`overrides`).
+- **Diag mais leve**: com boot_completed e adb pela rede no ar, o `hy300-diag.sh` para as coletas
+  (o `dmesg` como root a cada 20 s deixava o processo em estado D, 9 % de CPU) e só confere se o adb
+  continua de pé; no prazo de 8 min ele termina. Se o adb cair antes do prazo, as coletas voltam, e
+  sem adb no prazo a volta ao Alpine continua igual.
+- **GApps e Aurora Store** (só no build local) e **zram pelo mmd** com writeback: seções abaixo.
+
+#### Memória: medição do boot 4 e o que mudou
+
+Medido no aparelho (`~/hy300-work/lineage-artifacts/boot4/medicao/` e leitura direta pelo adb):
+
+| Item | Valor |
+|---|---|
+| `MemTotal` | 1.486.400 kB |
+| Nó `memory` do DT (preenchido pelo U-Boot) | `0x00200000+0x08200000` e `0x09400000+0x56c00000` = 1.554.432 kB, termina em `0x60000000` |
+| Buraco em `0x08400000` | 16 MiB (OP-TEE/BL32, fora do kernel) |
+| Reservado pelo kernel no boot | 71.508 kB (código 21 MB, rodata/dados 13 MB, `struct page` ~24 MB) |
+| `reserved-memory` do DT | `linux,cma` 8 MiB (reutilizável); `ramoops` 960 KiB; `rknpu` 512 MiB **desativado** (`status = "disabled"`, não reserva nada); `drm-logo`, `drm-cubic-lut`, `vendor-storage-rm` com tamanho 0 |
+| Zona DMA32 | 388.608 páginas presentes |
+| `MemAvailable` / `MemFree` (assistente aberto) | 580 a 630 MB / 23 a 78 MB |
+| `AnonPages` / `Cached` | 457 a 474 MB / 608 a 687 MB |
+| `Slab` (não recuperável) | 160 MB (105 MB) |
+| `KernelStack` / `PageTables` | 20 MB / 42 MB |
+| DMA-BUF | 64 MB |
+| zram (`mm_stat`) | 78,8 MB de páginas em 22,8 MB comprimidos, 30,5 MB com a sobra do zsmalloc: razão 3,45 (2,58 efetiva) |
+| Maiores PSS | system_server 151 MB, surfaceflinger 80 MB, systemui 71 a 81 MB, tv.settings 56 MB, launcher 37 MB, media.provider 27 MB, lineageos.updater 13 a 15 MB, setupwizard 60 MB enquanto aberto |
+
+Conclusões:
+
+- **A RAM física é 1,5 GB, não 2 GB.** O nó `memory` vem do U-Boot, que o monta a partir do que o
+  blob de DDR mediu, e termina em `0x60000000`. Não há reserva escondida no DT: o que o DT reserva
+  soma ~9 MB. **Não há mudança de DT que devolva memória**, e declarar memória além da física
+  derruba o kernel.
+- O CMA de 8 MiB basta: minigbm (dumb no DRM com IOMMU), MPP e RGA alocam no heap `system`
+  (páginas espalhadas, IOMMU), não no CMA. Nenhuma reserva fixa pensada para 4K/10 bits existe no DT
+  ou no MPP (o rkvdec2 usa 45 KiB de SRAM e 64 KiB de RCB); os buffers do Codec2 são alocados por
+  stream, e o teto de 1920x1088 no `media_codecs_c2_rk.xml` limita o DPB a 1080p.
+- **Para o worker do kernel** (descrição, não mexi nos repositórios de kernel):
+  1. Opcional: `CONFIG_CRYPTO_ZSTD=y` só se quisermos testar zstd; a recomendação é ficar no lz4
+     (abaixo). O kernel tem `CONFIG_ZRAM_WRITEBACK=y` e `CONFIG_BLK_DEV_LOOP=y`, que é o que o
+     writeback precisa.
+  2. Investigar os 105 MB de slab não recuperável com root (`/proc/slabinfo` no Alpine ou num
+     build eng): o `/sys/kernel/slab` não é legível pelo shell. Suspeitos: buffers pré-alocados do
+     AIC8800 (`aicwf_prealloc_txq_alloc`, `aicbsp_resv_mem_alloc_skb`) e caches de kmalloc.
+     `CONFIG_KFENCE` (63 objetos) e `CONFIG_SCHED_DEBUG` custam pouco; `SLUB_DEBUG` já está desligado.
+
+**zram e writeback** (diretriz do usuário: mais swap e compressão, vídeo até 720p):
+
+- **Tamanho 125 % da RAM (1,81 GB).** Com a razão efetiva medida (2,58), o zram cheio ocupa
+  ~700 MB, menos da metade da RAM; acima disso a memória comprimida disputaria com o que precisa
+  ficar descomprimido (SurfaceFlinger, o app de vídeo, o cache de arquivos). 150 % ocuparia ~840 MB
+  (58 % da RAM) quando cheio.
+- **lz4, não zstd.** O kernel só tem lz4 (`CONFIG_CRYPTO_ZSTD` desligado). Mesmo com zstd: nos
+  quatro A55 a 1,8 GHz o zstd comprime várias vezes mais devagar e descomprime ~3 vezes mais
+  devagar que o lz4, para ganhar ~25 % de razão. Cada falta de página no zram vira descompressão no
+  caminho do app em primeiro plano; com vídeo tocando, a latência do lz4 pesa mais que a razão. O
+  kernel 6.1 não tem recompressão (`ZRAM_MULTI_COMP` veio no 6.2), que seria o meio-termo (lz4 na
+  hora, zstd nas páginas ociosas).
+- **Writeback para o eMMC pelo `mmd`** (o daemon de memória do Android 17, `system/memory/mmd`,
+  ligado pela flag `android.mmd.flags.mmd_enabled` no `cp2a`). O zram saiu do fstab: com a linha
+  lá, o `swapon_all` ativa o zram antes do `mmd_setup`, que então pula a configuração inteira, e o
+  writeback junto. Agora o `mmd_setup` monta o zram no boot_completed (como antes) com um arquivo
+  de 512 MiB em `/data/per_boot/zram` atrás de um loop como dispositivo de writeback, e o `mmd`
+  grava no eMMC só páginas ociosas há 2 a 4 horas, no máximo 256 MiB por dia (~90 GB por ano, bem
+  abaixo da resistência de um eMMC de 16 GB). A manutenção não espera o aparelho ficar ocioso
+  (`mm.zram.maintenance.require_device_idle=false`): o projetor é desligado, não fica parado com a
+  tela apagada. Se o `/data` tiver menos de 1,5 GiB livres depois do arquivo, o `mmd` monta o zram
+  sem writeback.
+- lmkd: sem mudança (PSI, `kill_heaviest_task`, `swap_util_max=90`). Com o zram maior, o
+  `swap_util_max` passa a valer sobre 1,81 GB.
+
+A medir no próximo boot (com e sem GApps): `/proc/meminfo`, `dumpsys meminfo`,
+`/sys/block/zram0/{mm_stat,bd_stat,backing_dev}`, `getprop | grep mmd`, e se o `mmd` registrou o
+writeback (`logcat -s mmd`).
+
+#### GApps (MindTheGapps ATV minimal) e Aurora Store
+
+**Proprietário, só no build local**: nada disso vai para repositório público. A árvore pública só
+tem a configuração condicional.
+
+- Fonte: o repositório que gera os zips do MindTheGapps para TV,
+  `MindTheGapps/vendor_gapps_tv`, branch `cinnamonbun` (Android 17), commit `9da5e04c873d` (o da
+  release `MindTheGapps-17.0.0-arm64-ATV-20260630_185024`). O local_manifest
+  `.repo/local_manifests/hy300-gapps.xml` (local) traz o projeto em `vendor/gapps_tv`:
+
+  ```xml
+  <project path="vendor/gapps_tv" name="MindTheGapps/vendor_gapps_tv" remote="hy300-github"
+           revision="9da5e04c873dee6c53d8aeea1e92e093500d87cc" upstream="cinnamonbun" clone-depth="1" />
+  ```
+
+  e `repo sync -c --no-tags vendor/gapps_tv` (980 MB de checkout).
+- Conferência: o zip `MindTheGapps-17.0.0-arm64-ATV-minimal-20260630_185024.zip` da release do
+  GitHub tem sha256 `b3d473ad2510c3cfdde7decdef03ae54a60394a84420ac5e4639931b84bddeb9`, igual ao
+  `.sha256sum` publicado e ao digest do GitHub. Cada APK e XML do zip foi comparado com o do
+  checkout (as partes `.apk.00/.01` concatenadas): todos iguais. O `ATVOverlay` do zip é compilado
+  do fonte no checkout (`overlay/`).
+- Como entra: `device.mk` faz `GMS_VARIANT := minimal` e `inherit-product` do
+  `vendor/gapps_tv/arm64/arm64-vendor.mk` só se o arquivo existir e `HY300_WITH_GAPPS` não for
+  `false`. A minimal traz GmsCore (`PrebuiltGmsCorePano`), GSF, Play Store (`Tubesky`),
+  `AndroidMediaShell` (Cast), `Katniss` (busca/Assistente), `Backdrop`, `AtvRemoteService`,
+  `DfuService`, TTS, TalkBack e o calendário; **não** traz o `TVLauncher` (o launcher continua o
+  do LineageOS). O `SetupWraithPrebuilt` (assistente do Google TV) sai pelo
+  `hy300-gapps-overrides`: o `TvProvision` já marca o aparelho como configurado, e a conta Google
+  entra por **Configurações > Contas e login**.
+- Permissões privilegiadas: o produto tem `ro.control_privapp_permissions=enforce`; o MindTheGapps
+  traz os `privapp-permissions-*.xml` dele, conferidos no host contra os APKs (ver o resultado da
+  rodada abaixo). sepolicy segue permissive; os GApps não declaram HAL (o `check_vintf_hals.py`
+  roda igual).
+- **Aurora Store** 4.8.4 (GPLv3, fonte em `gitlab.com/AuroraOSS/AuroraStore`), APK da F-Droid
+  `com.aurora.store_76.apk`, sha256 `fd9c75d90d0f4a7c132b9b4a5a2cf1992a45e03b8d8ff988b7dcfbc0db2c4d11`,
+  pré-instalada como app comum no `/product` (atualizável pela própria loja). O APK fica fora do
+  git; `device/txcz/hy300/tools/fetch_aurora.py` baixa o `index-v2.json` da F-Droid, confere a
+  versão e o sha256 fixados, baixa o APK, confere de novo e gera `prebuilt/aurora/Android.bp`
+  (`--from <apk>` usa uma cópia local, com a mesma conferência).
+- Sem GApps: `HY300_WITH_GAPPS=false` no ambiente do build, ou sem o checkout.
+
+**Aparelho não certificado.** Um LineageOS não passa na certificação do Play Protect; o Play Store
+pode avisar "dispositivo não certificado" e alguns apps se recusam a instalar. O registro é feito
+pelo usuário, com a conta Google dele:
+
+1. Descobrir o **GSF ID** (Google Services Framework Android ID). Sem root no aparelho
+   (`ro.debuggable=0`), o caminho é um app que o mostra, por exemplo o "Device ID" (Evozi), instalado
+   pela Aurora Store. O app mostra o valor em hexadecimal; o formulário do Google aceita o número
+   em decimal (`printf '%d\n' 0x<valor>` no PC).
+2. Abrir `https://www.google.com/android/uncertified/` no PC, entrar com a mesma conta Google usada
+   no projetor e colar o GSF ID.
+3. No projetor: **Configurações > Apps**, limpar dados do Google Play Store e do Google Play
+   Services, e reiniciar. O registro pode levar alguns minutos a algumas horas para valer.
+
+O Widevine segue separado: os GApps não trazem DRM (ver "DRM").
+
+#### Artefatos e como gravar
+
+Kernel igual ao da rodada 5 (`hy300-ack-6.1 1ee24ab83ac1`, nenhum prebuilt novo nesta rodada).
+`verify-boot` passa nos três boot.img; `check_vintf_hals.py`: "11 HALs obrigatórios declarados;
+todo HAL declarado tem serviço no init" nas duas imagens; os 104 testes da árvore passam. Permissões
+privilegiadas conferidas no host (aapt2 contra o `AndroidManifest.xml` do framework e os
+`privapp-permissions` da imagem): nenhuma priv-app pede permissão privilegiada fora do allowlist
+(o GmsCore pede 106, as 106 estão no XML do MindTheGapps).
+
+Com GApps, em `~/hy300-work/lineage-artifacts/` (rodada 5 em `r5/`):
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` (`gpu=panfrost`, vai na `recovery`) | 19.888.128 | `5c4436d5b5093eea16b9c50982acea667297e64dac522f2bfe6589466e6eda7b` |
+| `boot-sw.img` (`gpu=sw`, reserva) | 19.888.128 | `fee8324d602acd5a224a33ef796ca7f3dbfdaf0e342edfd4b21561fdb7741200` |
+| `recovery.img` | 32.614.400 | `15ee072943740ad2cfc892d85207417dd1d8d5e944a8b28c60399546727ef887` |
+| `super.img` (sparse) | 1.885.061.212 | `10d2275e29363065a2bf0a0e6499fe0a66f8e9830ed9fbea15f05e7cca0d77aa` |
+| `super.raw` (vai na `super`) | 3.263.168.512 | `0951489ec4f8c002ed4c91b633d3a6107379c81672dcbcb46fdb37f3f7b959df` |
+
+Sem GApps (`HY300_WITH_GAPPS=false`), em `r6-sem-gapps/`; o `boot.img` e o `boot-sw.img` são os
+mesmos:
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `recovery.img` | 32.614.400 | `a27d72dda2820acf126de6a868c6d685459934dc3842f48c489198f527f29642` |
+| `super.img` (sparse) | 1.403.607.032 | `845917642d10805d7eac98bd16f20be0e3425365fffafab7278c11442930caa2` |
+| `super.raw` | 3.263.168.512 | `ddbfbc2c47046accaaa47b1a4a47f697a93eb1df835011cc8d3817cc1d5e4319` |
+
+O `boot.img` mudou em relação à rodada 5 porque o fstab do ramdisk perdeu a linha do zram.
+
+Antes de gravar:
+
+- **Com GApps, apague o `/data`.** GApps instalados por cima de um `/data` que já subiu sem eles
+  costumam deixar o Play Services sem as permissões padrão (o LineageOS recomenda instalar os
+  GApps antes do primeiro boot). Pelo Alpine, depois de gravar a `super`:
+  `dd if=/dev/zero of=/dev/block/by-name/userdata bs=1M count=64 && sync`; o fstab tem
+  `formattable` e o Android formata no boot. O `/metadata` fica: o `adb_keys` volta sozinho, mas o
+  `wifi.conf` é apagado depois de usado e precisa ser gravado de novo (roteiro em "Rodada 5").
+- **Fuso**: `persist.sys.timezone` só vale num `/data` novo. Num `/data` que já existe o valor
+  gravado (UTC) vence; troque em Configurações > Sistema > Data e hora (ou apague o `/data`).
+- Sem GApps (`r6-sem-gapps/`) dá para gravar por cima do `/data` do boot 4.
+
+YouTube para Android TV (`com.google.android.youtube.tv`): não vem na minimal. Não há fonte com
+hash publicado fora do Google Play; a forma confiável é instalar pela Aurora Store depois do boot
+(ela baixa do Google Play, com a assinatura do Google conferida pelo Android na instalação), sem
+precisar de conta (sessão anônima da Aurora).
+
+Fica para a rodada 7: a imagem "de uso" (diag desligado, adb pela rede desligado por padrão e
+ligável pelo app ou pelas opções de desenvolvedor), com a de teste como hoje.
+
 ### Gravar pelo Alpine
 
 O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com
@@ -610,33 +843,37 @@ Voltar ao Android 12: gravar `~/hy300-backup/super.img` (descomprimido) na `supe
 | 1,5 GB de RAM | launcher recarregando | ajustar lmkd/zram depois de medir |
 | Seccomp do Codec2 (política do Android 14 no 17) | serviço c2 morre ao iniciar | logcat `minijail`; ajustar a política |
 
-### Estado (boots 1 a 3)
+### Estado (boots 1 a 4)
 
-Só conta como visto no aparelho o que está nos logs de `~/hy300-work/lineage-artifacts/boot{1,2,3}`.
+Só conta como visto no aparelho o que está nos logs de `~/hy300-work/lineage-artifacts/boot{1,2,3}`
+e nas medições do boot 4 (`boot4/medicao`, e leituras pelo adb durante a rodada 6).
 
 **Feito e visto no aparelho**
 
 - Primeiro boot pelo Alpine, com o ciclo do diag (logs no `/metadata`, marca de ficar) e a volta
   automática ao Alpine.
 - Kernel ACK `hy300-ack-6.1` com o DT corrigido: sem tempestade de IRQ ("GPIO Key Home" = 0).
-- Display (painel LVDS 1024x600) e bootlog nativo.
-- GPU Panfrost sem erro (jobs sem timeout).
-- Driver Wi-Fi AIC8800 no kernel Android, com scan.
+- Display (painel LVDS 1024x600 a 60 Hz) e bootlog nativo.
+- Boot completo (boot 4): boot_completed em menos de 3 min, sem reinício depois dos 480 s.
+- GPU Panfrost (Mesa, GLES 3.1) sem erro.
+- Wi-Fi AIC8800 com a pilha do Android (DHCP) e adb pela rede com chave.
+- Áudio (HAL core e efeitos) e o serviço do Codec2 com os decoders `c2.rk.*`.
+- CPUs em performance a 1,8 GHz.
 - Shutdown e reboot.
 
 **Feito, sem verificação no aparelho**
 
-- App de configurações (`HY300Settings`) como priv-app com a chave de plataforma.
-- Vídeo por hardware (Codec2 + MPP, buffer mode com cópia pela RGA).
+- App de configurações (`HY300Settings`) como priv-app: o item "Projetor" resolve para ele
+  (`query-activities`); a correção do seletor de Configurações é da rodada 6.
+- Decodificação por hardware tocando vídeo (o componente sobe; falta tocar um vídeo).
+- Rodada 6: encoders, entrada por Surface, zram pelo `mmd` com writeback, diag mais leve,
+  `TvProvision`, fuso, GApps e Aurora Store.
 
 **Falta**
 
-- Boot completo: o HAL core de áudio trava o system_server (o Watchdog o mata); corrigido na
-  rodada 5, a conferir no próximo boot.
-- Pilha Wi-Fi completa e adb pela rede (rodada 5, a conferir).
 - Bluetooth e sensores.
-- Widevine.
-- Vídeo 10 bits e encoders.
+- Widevine (os GApps não trazem DRM).
+- Vídeo 10 bits.
 - sepolicy própria (hoje permissive).
 - Keystone no SurfaceFlinger.
 - Entrada HDMI (RK628, vídeo e áudio).
