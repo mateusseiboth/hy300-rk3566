@@ -11,6 +11,8 @@ import java.lang.reflect.Method;
  * a mesma que o TvSettings RK usa em display/AdvancedDisplaySettingsActivity), por reflexão.
  * Fallback: grava {@code persist.vendor.<item>.main} e incrementa {@code vendor.display.timeline},
  * que é o gatilho que o HWC ({@code HwcDisplay::UpdateBCSH}) observa.
+ * No LineageOS do HY300 o drm_hwcomposer lê {@code persist.sys.hy300.picture.<item>} (o sistema não
+ * pode gravar props do vendor com o SELinux do Treble) e não precisa de gatilho.
  */
 public final class RkDisplay {
     private static final String TAG = "HY300RkDisplay";
@@ -35,7 +37,25 @@ public final class RkDisplay {
         return mgr;
     }
 
-    public static String prop(int i) { return "persist.vendor." + ITEMS[i] + ".main"; }
+    private static Boolean lineage;
+
+    public static String prop(int i, boolean lineage) {
+        return lineage ? "persist.sys.hy300.picture." + ITEMS[i] : "persist.vendor." + ITEMS[i] + ".main";
+    }
+
+    public static boolean isLineage(java.util.Map<String, String> props) {
+        String version = props.get("ro.lineage.version");
+        return version != null && !version.isEmpty();
+    }
+
+    public static boolean needsTimeline(boolean lineage) { return !lineage; }
+
+    private static synchronized boolean lineage() {
+        if (lineage == null) lineage = !Sys.get("ro.lineage.version", "").isEmpty();
+        return lineage;
+    }
+
+    public static String prop(int i) { return prop(i, lineage()); }
 
     public static boolean set(int i, int value) {
         Object m = mgr();
@@ -50,8 +70,12 @@ public final class RkDisplay {
                 Log.w(TAG, SETTERS[i] + " falhou: " + t);
             }
         }
-        lastPath = "props + vendor.display.timeline";
         boolean ok = Sys.set(prop(i), String.valueOf(value));
+        if (!needsTimeline(lineage())) {
+            lastPath = "persist.sys.hy300.picture (drm_hwcomposer)";
+            return ok;
+        }
+        lastPath = "props + vendor.display.timeline";
         int t = 0;
         try { t = Integer.parseInt(Sys.get("vendor.display.timeline", "0")); } catch (NumberFormatException ignored) { }
         return ok & Sys.set("vendor.display.timeline", String.valueOf(t + 1));

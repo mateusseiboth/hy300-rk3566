@@ -66,6 +66,8 @@ O `motor_store` (kernel em `boot.img`, desmontado em `0x7359b0`) compara o buffe
 
 - Escala **0–100, padrão 50**: é o que o TvSettings RK usa (`display/AdvancedDisplaySettingsActivity`, via `RkDisplayOutputManager.setBrightness(display, v)`).
 - O app grava `persist.vendor.<item>.main` e incrementa `vendor.display.timeline`. É o mesmo caminho do `RkDisplayOutputManager`.
+  **No LineageOS** grava `persist.sys.hy300.picture.<item>` (o drm_hwcomposer do HY300 lê e aplica no BCSH do VOP2; o sistema não pode
+  gravar props do vendor com a sepolicy do Treble), sem o timeline. A ROM é detectada por `ro.lineage.version` (`RkDisplay`).
   Com `vendor.hwc.log=511`, o HWC registra `hwc-drm-connector: UpdateBCSH ... LVDS-0 BCSH=[b,c,s,h]` a cada mudança do timeline, e **não**
   registra "can't find suitable BCSH Property": o conector LVDS tem as propriedades BCSH e o HWC as envia ao kernel. O efeito visual depende do VOP2 e só dá para ver na projeção.
   `screencap` não serve (captura antes do HWC). Não há `/dev/mem` (`CONFIG_DEVMEM` desligado) para ler os registradores do VOP2.

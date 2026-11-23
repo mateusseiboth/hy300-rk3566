@@ -10,7 +10,8 @@
  *
  * Uso: hy300-bootlog <largura> <altura> <logo.png> [--test]
  * Sai em boot_progress_enable_screen, na transição 0->1 de service.bootanim.exit ou em 180 s
- * (15 s com --test) pelo relógio monotônico. Cria /dev/.bootlog_ready no primeiro quadro.
+ * (15 s com --test) pelo relógio monotônico. Cria a marca $BOOTLOG_READY (padrão
+ * /dev/.bootlog_ready) no primeiro quadro.
  * Código de saída != 0 = não conseguiu desenhar (o bootlog.sh cai na animação padrão).
  */
 #include <android-base/properties.h>
@@ -31,6 +32,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <map>
@@ -44,6 +46,12 @@ using namespace android;
 using hy300::bootlog::BootModel;
 
 namespace {
+
+// Marca do 1º quadro: BOOTLOG_READY do script (no LineageOS, num diretório com rótulo próprio).
+const char* readyPath() {
+    const char* path = getenv("BOOTLOG_READY");
+    return path != nullptr && path[0] != '\0' ? path : "/dev/.bootlog_ready";
+}
 
 constexpr int kLogoSize = 150;
 constexpr int64_t kFrameMs = 40;
@@ -246,7 +254,7 @@ int main(int argc, char** argv) {
 
         if (!readySignaled) {
             readySignaled = true;
-            close(open("/dev/.bootlog_ready", O_CREAT | O_WRONLY | O_CLOEXEC, 0644));
+            close(open(readyPath(), O_CREAT | O_WRONLY | O_CLOEXEC, 0644));
         }
         usleep(kFrameMs * 1000);
     }

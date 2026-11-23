@@ -152,7 +152,7 @@ public final class Main {
             }
             if (!readySignaled) {   // avisa o script para encerrar a animação original
                 readySignaled = true;
-                try { new java.io.FileOutputStream("/dev/.bootlog_ready").close(); } catch (Throwable ignored) {}
+                try { new java.io.FileOutputStream(readyPath()).close(); } catch (Throwable ignored) {}
             }
             Thread.sleep(40);
         }
@@ -214,5 +214,11 @@ public final class Main {
         } catch (Throwable t) {
             synchronized (lines) { lines.addLast("bootlog: " + t); }
         }
+    }
+
+    /** Marca do 1º quadro: BOOTLOG_READY do script (no LineageOS, num diretório com rótulo próprio). */
+    static String readyPath() {
+        String path = System.getenv("BOOTLOG_READY");
+        return path == null || path.isEmpty() ? "/dev/.bootlog_ready" : path;
     }
 }

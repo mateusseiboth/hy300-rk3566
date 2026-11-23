@@ -55,7 +55,7 @@ Tela lógica: **1280×720** (painel físico 1024×600). Os comandos de keystone,
 |---|---|---|---|
 | Modo de cor (TXCZ) | `persist.txcz.color.model=0/1/2` + `persist.vendor.pq.path=/vendor/etc/pq_play{,_yanli,_rouhe}.json` | **nenhum** (prop não é lida no ROM; yanli ≡ rouhe) | — |
 | PQ real (RK) | `persist.vendor.rkpq.config.path` (init força `/vendor/etc/pq_ui.json` a cada boot), `persist.vendor.tvinput.rkpq.mode` | `vendor/lib/libpq.so` (caminho tv_input/HDMI) | `setprop persist.vendor.rkpq.config.path /vendor/etc/pq_play_yanli.json` (efeito/recarga não confirmados) |
-| Brilho/contraste/saturação/matiz | `persist.vendor.{brightness,contrast,saturation,hue}.main` (0–100, padrão 50) + incrementar `vendor.display.timeline` | HWC RK (`UpdateBCSH`): o conector LVDS tem as propriedades BCSH e o HWC as envia (log com `vendor.hwc.log=511`); efeito visual a confirmar | `setprop persist.vendor.contrast.main 55; setprop vendor.display.timeline $(( $(getprop vendor.display.timeline)+1 ))` |
+| Brilho/contraste/saturação/matiz | `persist.vendor.{brightness,contrast,saturation,hue}.main` (0–100, padrão 50) + incrementar `vendor.display.timeline` (no LineageOS: `persist.sys.hy300.picture.<item>`, ver `docs/lineage-recursos.md`) | HWC RK (`UpdateBCSH`): o conector LVDS tem as propriedades BCSH e o HWC as envia (log com `vendor.hwc.log=511`); efeito visual a confirmar | `setprop persist.vendor.contrast.main 55; setprop vendor.display.timeline $(( $(getprop vendor.display.timeline)+1 ))` |
 
 ## Outros
 
