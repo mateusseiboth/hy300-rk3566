@@ -301,6 +301,32 @@ Logs em `~/hy300-work/lineage-artifacts/boot1/pstore.txt`. Funcionou: U-Boot com
      Não descartado, mas sem sinal no log.
   Teste barato que separa kernel de Mesa: `hy300-gpu-test` no Alpine (kmscube com o Mesa do
   Alpine no kernel BSP). Se travar igual, é kernel/DT; se rodar, olhar ACK e Mesa.
+
+  **Causa provável, achada depois (23/11): o DT, não o Panfrost.** O `/proc/interrupts` do panic
+  tem `71: 16528046 ... rockchip_gpio_irq 8 Edge GPIO Key Home`, tudo na CPU0 (~270 mil/s desde
+  o probe do `gpio-keys`). Os relatórios do marco 1 (BSP, Alpine) já mostravam 2,7 a 3,2 milhões
+  aos 17-18 s. A fábrica declara a tecla como `interrupts = <0x0 0x8>` no gpio1 (pino 0 =
+  GPIO1_A0, `IRQ_TYPE_LEVEL_LOW`; o `/proc/interrupts` de fábrica mostra `gpio1 0 Level` com 0); o
+  porte leu ao contrário, `<RK_PB0 IRQ_TYPE_NONE>`, e caiu no GPIO1_B0, o LED "green" (saída em
+  0). Sem tipo, o GPIO fica em nível baixo e dispara sem parar. Com a CPU0 quase toda em hardirq
+  (o `IRQ_TIME_ACCOUNTING` não cobra isso da thread, então o RT throttling quase não age), as
+  threads do Panfrost, que herdam a afinidade da CPU0, andam a conta-gotas: timeout de 500 ms do
+  job, a thread da MMU dezenas de segundos em `shmem_read_mapping_page_gfp`, `ksoftirqd/0` sem
+  CPU (rcu stall com `softirq=1048/1048`) e a CPU3 num spinlock (provavelmente o `job_lock`, que a CPU0 segura) até o
+  pré-timeout. Correção no `hy300-ack-6.1` (`c16531517b74`): a tecla vira `gpios = <&gpio1
+  RK_PA0 GPIO_ACTIVE_LOW>`. O `build-lineage-kernel.sh` agora para se uma tecla do `gpio-keys`
+  estiver sem tipo, num pino de LED ou fora do pino de fábrica (`tools/dt_gpio_irq.py`, testes
+  em `tests/test_dt_gpio_irq.py`). O branch `hy300-6.1` (Alpine) tem o mesmo erro.
+
+  No mesmo prebuilt, endurecimento do Panfrost (commits sobre o `c16531517b74`): backport de
+  "Add gpu_irq, mmu_irq" + "Synchronize and disable interrupts before powering off" (6.8, não 6.5),
+  "Sync IRQ by job's timeout handler" (6.6), "Check sgt to know whether pages are already mapped"
+  + "Fix the error path in panfrost_mmu_map_fault_addr()", e um limite local: 32 respostas "já
+  mapeado" seguidas no mesmo bloco do heap viram falha terminal em vez de laço eterno. Prebuilt
+  `hy300-ack-6.1` `1ee24ab83ac1`: `Image.gz`
+  `a9d844f1311b89ea859b8a2ebe1235d22264bc498d90048b75d4db635d32d93a`, `panfrost.ko`
+  `dd2f37d9404ad900c03a4ea24e14d0f43a42b1cb240d73d758e19f8a5dc5d71a`; `gpu-sched.ko` e
+  `drm_shmem_helper.ko` saem iguais aos de `9358ce442f3e`.
 - **Chave de reserva da GPU**: `androidboot.hy300.gpu=sw|panfrost` na cmdline, decidida no
   `init.rk3566.rc` (`ro.hardware.egl`, `ro.hardware.vulkan` e `drm.gpu.vendor_name` saíram dos
   build.prop). `sw`: sem `panfrost.ko`, GLES pelo **ANGLE do sistema sobre o SwiftShader**

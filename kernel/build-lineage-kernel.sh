@@ -62,6 +62,12 @@ build_kernel() {
 	kmake Image modules "rockchip/$DTB_NAME"
 }
 
+# Tecla do gpio-keys no pino de fábrica e fora das saídas de LED (tests/test_dt_gpio_irq.py).
+check_dt_keys() {
+	python3 -I "$REPO/tools/dt_gpio_irq.py" check "$KOUT/arch/arm64/boot/dts/rockchip/$DTB_NAME" \
+		--factory "$REPO/device-tree/rk3566-hy300-txcz.dtb"
+}
+
 collect_modules() {
 	rm -rf "$MODULES_DIR" && mkdir -p "$MODULES_DIR"
 	local module path
@@ -90,6 +96,7 @@ main() {
 	export_source
 	require_kbase_tree "$KSRC" || exit 1
 	build_kernel
+	check_dt_keys
 	collect_modules
 	install_prebuilts
 	install_wifi_firmware

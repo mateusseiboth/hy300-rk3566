@@ -19,7 +19,7 @@ kernel Android da Rockchip, branch `hy300-ack-6.1` (ver "Base Android"). É a ba
 | DT, Makefile e fragmento de config | branch `hy300-ack-6.1` do `kernel-hy300-rk3566` sobre `lineage-23.2` do Lineage-Rockchip `f4f8107cf7cf` (6.1.172). Antes: branch `hy300-6.1`, commit `8b5abca` sobre `develop-6.1` `77168c8d5ab8` |
 | Script que monta tudo | `kernel/build-marco1.sh` (+ `kernel/lib-kbase.sh`) |
 | initramfs de teste | `kernel/initramfs-test/` (`init`, `hy300-test.sh`, `build.sh`) |
-| Testes | `tests/test_initramfs_misc.py`, `tests/test_dtdiff.py`, `tests/test_dtnorm.py`, `tests/test_kbase.py`, `tests/test_smoke_qemu.py`, `kernel/initramfs-test/smoke-qemu.py` |
+| Testes | `tests/test_initramfs_misc.py`, `tests/test_dtdiff.py`, `tests/test_dtnorm.py`, `tests/test_dt_gpio_irq.py` (teclas do `gpio-keys`: pino de fábrica, tipo da IRQ e LED no mesmo pino; `HY300_PORT_DTB=<dtb>` confere o DT do porte), `tests/test_kbase.py`, `tests/test_smoke_qemu.py`, `kernel/initramfs-test/smoke-qemu.py` |
 | Imagem | base ack: `~/hy300-work/marco1-ack/recovery-marco1.img`; base bsp: `~/hy300-work/marco1/recovery-marco1.img` (fora do repo) |
 | Wi-Fi (AIC8800D80) | commits `2b227eb`, `53fa34e` e `12e46e1` do `hy300-6.1` (no `hy300-ack-6.1`: `2011306`, `3c7ca16`, `fcca870` e `1e3aa6b`); modo `hy300.wifi=1` do `/init`; ver "Wi-Fi no 6.1" |
 
