@@ -136,9 +136,13 @@ Commitado (o README do app tem a tabela de estado com [testado]/[não testado] e
   `hy300-android` volta ao Android. Provado no aparelho: 3 boots, ida e volta, panic → reinício no
   Alpine. Instalado no Android (overlay): `hy300-clear-bcb` (apaga `boot-recovery` da `misc`).
   **Limitação conhecida:** o reset de hardware do watchdog (travamento sem panic) ainda DESLIGA o
-  aparelho mesmo com o `CRU_GLB_RST_CON` em 0x113; volta pelo botão de energia. O pré-timeout
-  (panic aos 30 s) cobre os travamentos em que o kernel ainda roda. O ajuste do CRU não sobrevive
-  ao reboot (chega 0x103), então cada kernel precisa aplicá-lo.
+  aparelho mesmo com o `CRU_GLB_RST_CON` em 0x113; volta pelo botão de energia. No teste B
+  (watchdogd parado de propósito, 23/11) o pstore mostra o pré-timeout disparando o panic aos 66 s
+  e o panic chegando ao fim (`end Kernel panic - not syncing: watchdog pretimeout event`), e mesmo
+  assim o aparelho DESLIGOU em vez de reiniciar. Ou seja, com o watchdog armado nem o panic
+  reinicia; o panic sem watchdog (sysrq c) reinicia normal. Causa em aberto: o restart handler do
+  dw-wdt (prioridade 128) não deveria entrar, porque o do PSCI (129) roda antes. Log em `~/hy300-work/alpine/teste-watchdog/`. O ajuste do CRU não sobrevive ao
+  reboot (chega 0x103), então cada kernel precisa aplicá-lo.
 
 ### 3. Pendências menores
 
