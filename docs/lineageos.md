@@ -853,6 +853,80 @@ declarado tem serviço no init"; 124 testes da árvore passam; nenhuma priv-app 
 Valem os mesmos avisos da rodada 6 para gravar com GApps (apagar o `/data`, `wifi.conf` de novo,
 fuso num `/data` antigo).
 
+### Rodada 8: integração da branch `recursos` (23/11/2026)
+
+Merge (não rebase) da branch `recursos` do worker de recursos nos dois repositórios: árvore
+`2a82b58` (12 commits, guia em [`lineage-recursos.md`](lineage-recursos.md)) e este repositório
+`ed46538` (bootlog e app prontos para o enforcing, o app usa `persist.sys.hy300.picture.*` no
+Lineage). Entrou tudo:
+
+- keystone no SurfaceFlinger (`frameworks/native/0001`, `hy300-keystone.rc` no system_ext);
+- BCSH pelo VOP2 (`external/drm_hwcomposer/0001`);
+- HAL de sensores para o SC7A20 (`sensors/`);
+- Bluetooth: HAL AIDL padrão + `hy300-bt-uart` (`hardware/interfaces/0002`), **ligado** nesta
+  imagem (`HY300_WITH_BLUETOOTH ?= true`; `false` no ambiente do build desliga);
+- TV input do HDMI (`tvinput/`), ainda sem imagem: o drm_hwcomposer não compõe sideband;
+- Codec2 10 bits (`codec2/0005`, depois do 0004);
+- sepolicy completa (`sepolicy/vendor`, `sepolicy/system_ext/{public,private}`), com o boot ainda
+  **permissive** para colher as negações dos domínios novos.
+
+Conflitos: `sepolicy/vendor/{file.te,genfs_contexts,platform_app.te}` ficaram com a versão da
+`recursos` (superconjunto; o app agora roda em `hy300_settings_app`, e o `platform_app.te` fica
+vazio); o `BoardConfig.mk` ficou com uma linha de `BOARD_VENDOR_SEPOLICY_DIRS`.
+
+O que o Soong pegou e foi corrigido (commit `10268e9`):
+
+- `sensors`: os cabeçalhos do libfmq não passam no `-Wconversion -Werror` (sinal e 64 para 32
+  bits dentro dos templates). Os includes deles ficam entre `#pragma clang diagnostic`; o código
+  do HAL continua com a flag.
+- `tvinput`: faltava linkar `android.media.audio.common.types-V1-ndk`, onde fica
+  `AudioDeviceDescription::CONNECTION_HDMI` (a `tv.input` V1 importa os tipos V1).
+- O patch do SurfaceFlinger compilou sem mudança (CompositionEngine e RenderEngine com
+  `-Wconversion -Werror`); o keystone não precisou ficar atrás de flag.
+
+Conferências: `check_sepolicy.py` ("sepolicy compila com as neverallows do build e os contextos
+conferem"), `check_vintf_hals.py` ("11 HALs obrigatórios declarados; todo HAL declarado tem
+serviço no init"), `verify-boot` nos quatro boot.img, 152 testes da árvore, nenhuma priv-app fora
+do allowlist. Kernel `cae418b6c490`.
+
+Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 7 em `r7/`), com GApps. O `boot.img`, o
+`boot-uso.img` e o `boot-sw.img` são os da rodada 7 (o ramdisk não mudou):
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` | 19.890.176 | `55bebe21d952150bd466eecb85ed0c31a63ee2a0a8cfaa53540fc1bcd60efe65` |
+| `boot-uso.img` | 19.890.176 | `47be28acfe3c1c89ad7756acac54ee7d015da830eccaf0ba7c219fd4e72ea2c3` |
+| `boot-sw.img` | 19.890.176 | `638f1b676bd5e49b20d77dcdaa0abebf4fb7f95edd54c89509087dcd41a9d378` |
+| `recovery.img` | 32.620.544 | `62444c76560ae4c5d1e33fafdb4711a579cc680c81caace63fb50a45be1e6f72` |
+| `super.img` (sparse) | 1.876.541.476 | `aa9535bb68cd15f73f1132a76dc4cc29f270546376842e79479c695cad5aba13` |
+| `super.raw` | 3.263.168.512 | `29a4b065dd4000a300c745bdccfe24fe653b304f6c571a687c173f4da73bd67d` |
+
+**O que conferir no aparelho, por frente** (com SELinux permissive, colher as negações de cada uma:
+`adb shell 'dmesg | grep avc; logcat -b all -d | grep avc'`):
+
+- **SELinux**: nenhuma negação dos domínios `hy300_*`, `hal_sensors_default`,
+  `hal_tv_input_default`, `hal_bluetooth_default`, `vendor_misc_writer`; só então tirar
+  `androidboot.selinux=permissive`.
+- **Keystone**: mexer nos cantos pelo app; `dumpsys SurfaceFlinger | grep Keystone` mostra os
+  cantos e se está ativo; a imagem deforma sem tela preta; `persist.sys.keystone.*` vale depois de
+  reiniciar (`hy300-keystone.rc`).
+- **BCSH**: brilho, contraste, saturação e matiz do app mudam a imagem (VOP2), na UI e em vídeo.
+- **Sensores**: `dumpsys sensorservice` lista o acelerômetro; os valores mudam ao inclinar; o
+  keystone automático reage. Se os eixos saírem trocados, `ro.vendor.hy300.accel.axes`.
+- **Foco**: `ls -lZ /sys/class/motor_cc/motor_cc/motor` (system vendor_hy300_motor 0660,
+  `sysfs_hy300_motor`); o app move a lente nos dois sentidos e para no fim de curso.
+- **Bluetooth**: `hy300-bt-uart` liga os rfkill e acerta o `ttyS1`; o HAL acha o controlador
+  (`dumpsys bluetooth_manager`), sem a pilha reiniciando em laço (se reiniciar, rebuild com
+  `HY300_WITH_BLUETOOTH=false`); parear um controle ou fone; o Wi-Fi continua estável com o BT
+  ligado (coexistência sem o `pta_config` da AICSemi).
+- **HDMI-in**: o RK628 faz probe sem fonte; com fonte, o TV input vê o cabo e a resolução
+  (`dumpsys tv_input`); a imagem ainda fica preta (sideband); o áudio chega ao alto-falante (placa
+  1, taxa em `/sys/class/hdmirx/rk628/audio_rate`).
+- **10 bits**: um HEVC Main10 e um VP9 perfil 2 tocam por `c2.rk.*` (não pelo software), sem
+  cores erradas.
+- Continuam da rodada 6/7: encoders e entrada por Surface, zram pelo `mmd`, gatilho
+  `debug.hy300.alpine`, perfil `uso`.
+
 ### Gravar pelo Alpine
 
 O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com
