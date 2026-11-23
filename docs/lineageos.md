@@ -185,7 +185,7 @@ DRM da imagem e existe para o `MediaDrm` responder "não suportado" em vez de la
 (detalhes na rodada 12). Ele continua quando o Widevine entrar: os dois convivem
 (`IDrmFactory/clearkey` e `IDrmFactory/widevine`).
 
-**Widevine L3** (para a rodada 13; até lá o coordenador instala por `adb remount`): binário do
+**Widevine L3** (no build desde a rodada 13; na 12 foi instalado por `adb remount`): binário do
 Google, **só no build local**, nunca em repositório público.
 
 | | |
@@ -1216,6 +1216,44 @@ A conferir no aparelho: `getprop ro.debuggable` = 1 e `adb root`; `adb remount` 
 YouTube para TV abre e toca vídeo sem DRM; `lshal`/`service list` com o `IDrmFactory/clearkey`
 subindo sob demanda; scrcpy com `--video-encoder=c2.rk.avc.encoder` mostra a tela, sem
 "mapInputBuffer" no logcat.
+
+### Rodada 13: Widevine L3 no build (23/11/2026)
+
+O Widevine L3 entra na imagem pelo build local (origem e hashes em "DRM"):
+
+- `vendor/hy300-widevine/` é cópia de `~/hy300-work/widevine/vendor-widevine/` (`rsync`, não
+  link), conferida pelo `SHA256SUMS` de lá. Não é projeto do repo nem de nenhum git.
+- A árvore (`3d2c0e3`) só tem a ligação condicional no `device.mk` (herda
+  `vendor/hy300-widevine/widevine.mk` se existir; variante `classico`, a `apex` desligada) e a
+  sepolicy: domínio `hal_drm_widevine` (`hal_server_domain(..., hal_drm)`, uso de fd do
+  `mediacodec` e do servidor Codec2), `/data/vendor/mediadrm` como `mediadrm_vendor_data_file` e o
+  `IDrmFactory/widevine` com `hal_drm_service`. O ClearKey continua: os dois `IDrmFactory` convivem.
+- Na imagem: `/vendor/bin/hw/android.hardware.drm-service-lazy.widevine` com o `.rc`
+  (`interface aidl android.hardware.drm.IDrmFactory/widevine`, sob demanda), o fragmento VINTF e a
+  `wv_media_drm_flags_c_lib.so`. Todas as bibliotecas que o binário e a lib pedem existem na imagem
+  (`libcrypto`, `libcutils`, `libc++`, `libbase`, `libaconfig_storage_read_api_cc` no vendor;
+  `liblog`, `libbinder_ndk` do sistema).
+
+Conferências: `check_audio_policy.py`, `check_sepolicy.py` (com o domínio novo),
+`check_vintf_hals.py` ("12 HALs obrigatórios declarados; todo HAL declarado tem serviço no init"),
+`verify-boot` nos quatro boot.img, 195 testes da árvore, nenhuma priv-app fora do allowlist.
+
+Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 12 em `r12/`). **Só a `super` mudou**; os
+boot.img são os das rodadas 11 e 12:
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` | 19.892.224 | `3f27d6f43a026374bf274ea6a59a8e885db5d83630c3b7978d45e595d295aab0` |
+| `boot-uso.img` | 19.892.224 | `49b0567f7f172a9435d4a4c86968346f5b18058484213779b5a6840f799ab8b5` |
+| `boot-sw.img` | 19.892.224 | `4756c318c876924c01f5de5a34d1292871564d3d628b7184db026155fac2a271` |
+| `recovery.img` | 32.626.688 | `a1eb6d5fcb5c228b7987f6672bf17a9712f35989e5ca8fddecf8aa12123a04b0` |
+| `super.img` (sparse) | 1.888.768.064 | `7b86e06e04718dc2a62a752028d41a688a833a063931f7208310c0ce4beaad07` |
+| `super.raw` | 3.263.168.512 | `fa6306e30e06edbbcb335c377aa812a0c35e88a26ddc2fd4af563d0ef3befd1f` |
+
+Gravar a `super` da 13 desfaz o que o `adb remount` pôs na 12 (o overlay fica no scratch; depois
+de gravar, `adb enable-verity` ou apagar o scratch evita o overlay antigo por cima da imagem nova).
+A conferir: `service list | grep -i drm` com `clearkey` e `widevine`, `dumpsys media.drm` (ou um app
+de teste) mostrando Widevine L3, e um vídeo protegido no YouTube ou no Crunchyroll.
 
 ### Gravar pelo Alpine
 
