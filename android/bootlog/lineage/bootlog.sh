@@ -6,7 +6,10 @@
 # 2) bootlog Java (app_process) desenha o logcat ao vivo; no 1º quadro, encerra o bootanimation;
 # 3) se a VM não subir, tenta de novo; se nada der certo, fica o bootanimation. Nunca segura o boot.
 klog() { echo "bootlog: $*" > /dev/kmsg; }
-rm -f /dev/.bootlog_ready
+# Marca do 1º quadro (versão nativa e Java): diretório criado pelo init com rótulo próprio
+# (hy300_bootlog_dev_file), porque a sepolicy não deixa criar arquivo solto no /dev.
+export BOOTLOG_READY=/dev/hy300-bootlog/ready
+rm -f "$BOOTLOG_READY"
 
 # Tamanho real do display: o modo do conector DRM ligado (no HY300, o painel LVDS 1024x600).
 W=1280
@@ -26,14 +29,14 @@ if [ -x $NATIVE ]; then
     $NATIVE "$W" "$H" $LOGO > /dev/kmsg 2>&1 &
     NP=$!
     n=0
-    while kill -0 $NP 2>/dev/null && [ ! -e /dev/.bootlog_ready ] && [ $n -lt 100 ]; do
+    while kill -0 $NP 2>/dev/null && [ ! -e "$BOOTLOG_READY" ] && [ $n -lt 100 ]; do
         sleep 0.05
         n=$((n+1))
     done
-    if [ -e /dev/.bootlog_ready ]; then
+    if [ -e "$BOOTLOG_READY" ]; then
         klog "nativo desenhando"
         wait $NP; klog "nativo terminou rc=$?"
-        rm -f /dev/.bootlog_ready
+        rm -f "$BOOTLOG_READY"
         exit 0
     fi
     kill $NP 2>/dev/null
@@ -66,12 +69,12 @@ while kill -0 $BA 2>/dev/null; do
     app_process -Xdeny-art-apex-data-files /system/bin com.hy300.bootlog.Main \
         "$W" "$H" $LOGO > /dev/kmsg 2>&1 &
     APP=$!
-    while kill -0 $APP 2>/dev/null && [ ! -e /dev/.bootlog_ready ]; do sleep 0.05; done
-    if [ -e /dev/.bootlog_ready ]; then
+    while kill -0 $APP 2>/dev/null && [ ! -e "$BOOTLOG_READY" ]; do sleep 0.05; done
+    if [ -e "$BOOTLOG_READY" ]; then
         klog "desenhando, encerrando bootanimation nativo"
         kill $BA 2>/dev/null
         wait $APP; klog "bootlog terminou rc=$?"
-        rm -f /dev/.bootlog_ready
+        rm -f "$BOOTLOG_READY"
         exit 0
     fi
     wait $APP; klog "VM falhou (rc=$?)"
