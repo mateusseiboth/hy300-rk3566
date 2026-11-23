@@ -29,6 +29,15 @@ public class AndroidSettingsTargetTest {
     }
 
     @Test
+    public void picksLineageTvSettings() {
+        // No LineageOS o pacote com.android.tv.settings é o TvSettings do AOSP, não o da TXCZ.
+        String t = AndroidSettingsTarget.choose(Arrays.asList(
+                OWN + "/" + OWN + ".AndroidSettingsActivity",
+                "com.android.tv.settings/com.android.tv.settings.MainSettings"), OWN);
+        assertEquals("com.android.tv.settings/com.android.tv.settings.MainSettings", t);
+    }
+
+    @Test
     public void noTargetWhenOnlyBlocked() {
         assertNull(AndroidSettingsTarget.choose(Collections.singletonList(
                 "com.android.tv.settings/com.shzhtxcz.txbox.MainActivity"), OWN));

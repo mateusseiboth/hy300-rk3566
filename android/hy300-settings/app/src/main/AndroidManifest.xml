@@ -40,6 +40,11 @@
                 <action android:name="com.android.tv.set.SOUND" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <!-- O mesmo item no TvSettings do AOSP/LineageOS (com.android.tv.settings). -->
+            <intent-filter>
+                <action android:name="com.android.tv.settings.SOUND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="io.github.hy300.settings.OPEN" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -1,0 +1,38 @@
+//
+// SPDX-FileCopyrightText: 2026 Mateus Seiboth
+// SPDX-License-Identifier: Apache-2.0
+//
+// Build do app no LineageOS 24 do HY300 (este repositório entra no checkout pelo local_manifest,
+// em vendor/hy300/hy300-rk3566). O Gradle (build.gradle) continua sendo o build para a ROM de
+// fábrica. Aqui: priv-app no /product, assinado com a chave de plataforma.
+
+android_app {
+    name: "HY300Settings",
+    srcs: ["app/src/main/java/**/*.java"],
+    resource_dirs: ["app/src/main/res"],
+    manifest: "app/src/main/AndroidManifest.xml",
+    static_libs: [
+        "androidx.fragment_fragment",
+        "androidx.leanback_leanback",
+        "androidx.leanback_leanback-preference",
+        "androidx.preference_preference",
+    ],
+    sdk_version: "current",
+    // targetSdk 32 como no Gradle: o serviço do keystone automático é foreground sem tipo.
+    target_sdk_version: "32",
+    min_sdk_version: "30",
+    certificate: "platform",
+    privileged: true,
+    product_specific: true,
+    optimize: {
+        proguard_flags_files: ["app/proguard-rules.pro"],
+    },
+    required: ["privapp-permissions-hy300-settings.xml"],
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-hy300-settings.xml",
+    src: "system/privapp-permissions-hy300-settings.xml",
+    sub_dir: "permissions",
+    product_specific: true,
+}

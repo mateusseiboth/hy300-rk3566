@@ -1,0 +1,13 @@
+# HY300: animação de boot com log ao vivo (hy300-rk3566/android/bootlog). Substitui o serviço
+# bootanim do frameworks/base (/system/etc/init/bootanim.rc); "override" porque o /product é lido
+# depois do /system.
+service bootanim /system/bin/sh /product/media/bootlog/bootlog.sh
+    override
+    class core animation
+    user root
+    group root graphics audio log readproc
+    seclabel u:r:bootanim:s0
+    disabled
+    oneshot
+    ioprio rt 0
+    task_profiles MaxPerformance

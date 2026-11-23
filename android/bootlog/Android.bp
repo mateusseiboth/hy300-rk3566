@@ -1,0 +1,62 @@
+//
+// SPDX-FileCopyrightText: 2026 Mateus Seiboth
+// SPDX-License-Identifier: Apache-2.0
+//
+// Build no LineageOS 24 do HY300 (este repositório entra pelo local_manifest em
+// vendor/hy300/hy300-rk3566). Animação de boot com log ao vivo, versão Java, a mesma do
+// Android 12 (o build.sh/install.sh continuam valendo lá). Tudo vai para o /product: o jar,
+// lineage/bootlog.sh, o logo, lineage/bootanim.rc (com override) e o zip de 1 quadro que o
+// bootanimation nativo mostra enquanto o ART não sobe.
+
+java_library {
+    name: "hy300-bootlog",
+    srcs: ["src/**/*.java"],
+    sdk_version: "current",
+    installable: true,
+    product_specific: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+prebuilt_etc {
+    name: "hy300-bootlog.rc",
+    src: "lineage/bootanim.rc",
+    filename: "hy300-bootlog.rc",
+    relative_install_path: "init",
+    product_specific: true,
+}
+
+prebuilt_media {
+    name: "hy300-bootlog.sh",
+    src: "lineage/bootlog.sh",
+    filename: "bootlog.sh",
+    relative_install_path: "bootlog",
+    product_specific: true,
+}
+
+prebuilt_media {
+    name: "hy300-bootlog-logo.png",
+    src: "files/logo.png",
+    filename: "logo.png",
+    relative_install_path: "bootlog",
+    product_specific: true,
+}
+
+// 1 quadro (o logo, 300x297, centralizado pelo bootanimation), sem compressão como o
+// bootanimation exige. Selecionado por ro.product.bootanim.file.
+genrule {
+    name: "gen-hy300-bootlog.zip",
+    tools: ["soong_zip"],
+    tool_files: ["files/logo.png"],
+    out: ["hy300-bootlog.zip"],
+    cmd: "mkdir -p $(genDir)/z/part0 && cp $(location files/logo.png) $(genDir)/z/part0/00000.png && " +
+        "printf '300 297 1\\np 0 0 part0\\n' > $(genDir)/z/desc.txt && " +
+        "$(location soong_zip) -L 0 -o $(out) -C $(genDir)/z -D $(genDir)/z",
+}
+
+prebuilt_media {
+    name: "hy300-bootlog.zip",
+    src: ":gen-hy300-bootlog.zip",
+    product_specific: true,
+}
