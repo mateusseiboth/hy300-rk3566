@@ -14,18 +14,29 @@ public final class Source {
     public static final String HDMI_PKG = "com.android.rockchip.camera2";
     public static final String HDMI_CLS = "com.android.rockchip.camera2.RockchipCamera2";
     public static final String HDMI_BOOT = HDMI_PKG + "," + HDMI_CLS;
+    /** LineageOS: a tela da entrada HDMI do TV input do HY300 (device/txcz/hy300 apps/HdmiInput). */
+    public static final String LINEAGE_HDMI_PKG = "io.github.hy300.hdmi";
+    public static final String LINEAGE_HDMI_CLS = "io.github.hy300.hdmi.HdmiActivity";
+    /** Ordem de tentativa para "Abrir HDMI": a do LineageOS, depois o app de câmera da fábrica. */
+    public static final String[][] HDMI_TARGETS = {
+            {LINEAGE_HDMI_PKG, LINEAGE_HDMI_CLS},
+            {HDMI_PKG, HDMI_CLS},
+    };
 
     private Source() {}
 
     public static boolean openHdmi(Context c) {
-        Intent i = new Intent().setComponent(new ComponentName(HDMI_PKG, HDMI_CLS))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            c.startActivity(i);
-            return true;
-        } catch (Exception e) {
-            return false;
+        for (String[] target : HDMI_TARGETS) {
+            Intent i = new Intent().setComponent(new ComponentName(target[0], target[1]))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                c.startActivity(i);
+                return true;
+            } catch (Exception e) {
+                // tenta a próxima
+            }
         }
+        return false;
     }
 
     public static boolean setHome() { return write("0", ""); }
