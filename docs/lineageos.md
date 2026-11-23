@@ -843,10 +843,10 @@ declarado tem serviço no init"; 124 testes da árvore passam; nenhuma priv-app 
 
 | Arquivo | Tamanho | sha256 |
 |---|---|---|
-| `boot.img` (perfil `teste`, vai na `recovery`) | 19.888.128 | `55bebe21d952150bd466eecb85ed0c31a63ee2a0a8cfaa53540fc1bcd60efe65` |
-| `boot-uso.img` (perfil `uso`) | 19.888.128 | `47be28acfe3c1c89ad7756acac54ee7d015da830eccaf0ba7c219fd4e72ea2c3` |
-| `boot-sw.img` (perfil `teste`, `gpu=sw`) | 19.888.128 | `638f1b676bd5e49b20d77dcdaa0abebf4fb7f95edd54c89509087dcd41a9d378` |
-| `recovery.img` | 32.614.400 | `4f18f2b76e4b01a9f36fcc2b13681a022c10f69302f66bafc5d052a37010c30a` |
+| `boot.img` (perfil `teste`, vai na `recovery`) | 19.890.176 | `55bebe21d952150bd466eecb85ed0c31a63ee2a0a8cfaa53540fc1bcd60efe65` |
+| `boot-uso.img` (perfil `uso`) | 19.890.176 | `47be28acfe3c1c89ad7756acac54ee7d015da830eccaf0ba7c219fd4e72ea2c3` |
+| `boot-sw.img` (perfil `teste`, `gpu=sw`) | 19.890.176 | `638f1b676bd5e49b20d77dcdaa0abebf4fb7f95edd54c89509087dcd41a9d378` |
+| `recovery.img` | 32.616.448 | `4f18f2b76e4b01a9f36fcc2b13681a022c10f69302f66bafc5d052a37010c30a` |
 | `super.img` (sparse) | 1.875.750.920 | `48e9ffb6cd21e84e7ab56387164b18b282c0ed2d7e79cb2bbf63336364e9e214` |
 | `super.raw` (vai na `super`) | 3.263.168.512 | `9f2dd74c961641dd52f1fff67bd78b4c9b12714334239489e9a68092f80533f5` |
 
