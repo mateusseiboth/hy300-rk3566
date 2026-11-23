@@ -267,6 +267,104 @@ tar -C /mnt/metadata -cf - hy300-diag; umount /mnt/metadata' > hy300-diag.tar`. 
 é apagada pelo estágio 1 do Alpine no boot seguinte, como sempre. Para tirar o diag, basta gravar
 um `boot.img` sem `androidboot.hy300.diag=1` (o `BoardConfig.mk` diz onde).
 
+### Rodada 3: o que o primeiro boot mostrou (23/11/2026)
+
+Logs em `~/hy300-work/lineage-artifacts/boot1/pstore.txt`. Funcionou: U-Boot com `Image.gz` na
+`recovery`, kernel ACK, `super` e partições, bootlog nativo na tela, probe do Panfrost
+(`mali-g52 id 0x7402`, 594 MHz). Falhou:
+
+- **A, system_server**: `HintManagerService` sem `IPower`. `HintManagerService.java:323-334`:
+  `mPowerHal = injector.createIPower()` (nulo sem HAL declarado), o `if (mPowerHal != null)`
+  protege só a leitura, e a linha 334 faz `mSupportInfo.headroom.isCpuSupported` com
+  `mSupportInfo` nulo. Corrigido com `android.hardware.power-service.example` (AOSP, IPower v7
+  com `getSupportInfo`). Ver a tabela de HALs abaixo.
+- **B, GPU**: aos 16,6 s `gpu sched timeout, js=1, config=0x7b00, status=0x8, head=tail` (o
+  primeiro job nem andou), depois `js=0`. A thread `irq/73-panfrost` (MMU) prende a CPU0 em
+  `panfrost_mmu_irq_handler_thread` → `shmem_read_mapping_page_gfp` (rcu stall aos 38 s, RT
+  throttling), e aos 65,8 s o pré-timeout do watchdog dá panic com a thread `irq/74-panfrost` em
+  `__pm_runtime_suspend`. Uma única interrupção de MMU no `/proc/interrupts`: a thread não sai
+  do laço `while (status)` porque o registrador volta lixo/fica preso com a GPU sendo suspensa.
+  Hipóteses, na ordem pedida:
+  1. **OPP/tensão: descartada.** O DT de fábrica (`rk-kernel.dtb` do resource) tem a GPU no
+     `vdd_fixed` (1,0 V fixo, `mali-supply`) e OPPs de 400 a 800 MHz com no máximo 1,0 V; 594 MHz
+     a 1,0 V está dentro.
+  2. **Nó da GPU: igual.** Interrupções SPI 39/41/40 = gpu/mmu/job (fábrica: `"GPU", "MMU",
+     "JOB"` na mesma ordem; mainline: mesma atribuição), `clocks = <&scmi_clk 1>, <&cru CLK_GPU>`
+     com `"gpu", "bus"` como no mainline, `power-domains` iguais. O que sobra do lado do kernel é o
+     **runtime PM**: o panfrost do 6.1 não sincroniza nem desliga as IRQs antes de desligar a GPU
+     (corrigido no upstream em "drm/panfrost: Synchronize and disable interrupts before powering
+     off", 6.5). Isso casa com o trace (MMU girando enquanto o job suspende). **Para o worker do
+     kernel**: backport desse commit (e dos que ele traz) no `hy300-ack-6.1`. Mitigação na
+     árvore, sem mexer no kernel: `power/control=on` na GPU logo depois do `modprobe`.
+  3. **Mesa 26.1 contra a UAPI 1.2**: o `panfrost_kmod.c` exige só 1.1 e trata os parâmetros que
+     o kernel não tem (`SYSTEM_TIMESTAMP_FREQUENCY`, prioridades de contexto, coerência só ≥ 1.6).
+     Não descartado, mas sem sinal no log.
+  Teste barato que separa kernel de Mesa: `hy300-gpu-test` no Alpine (kmscube com o Mesa do
+  Alpine no kernel BSP). Se travar igual, é kernel/DT; se rodar, olhar ACK e Mesa.
+- **Chave de reserva da GPU**: `androidboot.hy300.gpu=sw|panfrost` na cmdline, decidida no
+  `init.rk3566.rc` (`ro.hardware.egl`, `ro.hardware.vulkan` e `drm.gpu.vendor_name` saíram dos
+  build.prop). `sw`: sem `panfrost.ko`, GLES pelo **ANGLE do sistema sobre o SwiftShader**
+  (`vulkan.pastel`); `panfrost`: módulo + Mesa + GPU sempre ligada. O `boot.img` desta rodada sai
+  com **`sw`**; o `boot-panfrost.img` é o mesmo com `panfrost` (`tools/lineage_prebuilt.py
+  variant`, que refaz o ID). O Alpine também troca sem regravar: `hy300-kexec` com a cmdline
+  alterada.
+- **C, diag sem rastro**: o gatilho era `on post-fs && property:ro.debuggable=1`, e o LineageOS
+  sai do userdebug com **`ro.debuggable=0`** (`vendor/lineage/config/common.mk`:
+  `PRODUCT_NOT_DEBUGGABLE_IN_USERDEBUG := true`; `system/build.prop` da imagem tem
+  `ro.debuggable=0`). O `post-fs` do `init.rk3566.rc` nem aparece no log. Agora
+  `property:ro.build.type=userdebug` no `.rc` e no script. Novo teste do `.rc`
+  (`tools/tests/test_init_rc.py`): todo `start` aponta para serviço definido, o diag começa num
+  evento cedo, e **cada condição `ro.*` dos gatilhos é conferida contra os build.prop da imagem
+  montada** (pegaria este erro) e as `ro.boot.hy300.*` contra a cmdline do `BoardConfig.mk`.
+- **D, tela preta a quente**: sem log; provavelmente a mesma GPU. Com `sw` o próximo boot não
+  passa pelo Panfrost.
+
+Artefatos da rodada 3 em `~/hy300-work/lineage-artifacts/` (a rodada 2 foi para `r2/`), com
+`SHA256SUMS`; `verify-boot` passa nos três boot.img:
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` (`gpu=sw`, vai na `recovery`) | 19.888.128 | `4960e653f1a4661eefcacf54c04b85234ddbc867d992b342e4baab69bb9c8a69` |
+| `boot-panfrost.img` (`gpu=panfrost`) | 19.888.128 | `cf2b9c47a231d106e7a8d0c6d82574f8973d361e2057bb714a323ba51a67a333` |
+| `recovery.img` | 32.614.400 | `7743e210c63d16966b8a1866e6b2227cf375eef00872dce34b67c18342187a69` |
+| `super.img` (sparse) | 1.407.666.140 | `ca0de53289bd9c420a877de4ff7178de6b15dd87548a6bfbe4f0808e3fb79893` |
+| `super.raw` (vai na `super`) | 3.263.168.512 | `f04c5b8cb8cda9f5facb6ec60e0e4a9128ef0a0a28bb7532ffe9216cd904e12a` |
+
+#### HALs: o que o VINTF declara, a fábrica, o Lineage-Rockchip e o system_server
+
+Fábrica: manifestos do `vendor.img` (Android 12). Lineage-Rockchip:
+`android_device_rockchip_rk35xx-common` (lineage-23.2, blobs). "Procurado": linhas `Could not find
+... in the VINTF manifest` do `pstore.txt` (o boot morreu no `HintManagerService`, então serviços
+mais adiante não chegaram a procurar; os que procuram depois estão na tabela pelo código).
+
+| HAL | Fábrica | Lineage-Rockchip | Procurado no boot | Decisão | Por quê (código do Lineage 24) |
+|---|---|---|---|---|---|
+| power `IPower` | sim | `power-service.rockchip` | system_server | **implementar**: `android.hardware.power-service.example` | `HintManagerService.java:323-334` (acima) |
+| audio.core `IModule`/`IConfig`, audio.effect `IFactory` | HIDL 7.0 | HIDL | audioserver | **implementar**: APEX `com.android.hardware.audio` (exemplo AOSP, ALSA no card 0) | sem módulo primário o audioserver fica sem saída; o `audioserver.rc` tenta `vendor.audio-hal-aidl` e falha |
+| power.stats | não | não | system_server | tolera | `PowerStatsHALWrapper.java:351-352`: `if (binder != null)` |
+| memtrack | não | `memtrack-service.rockchip` | system_server | tolera | `MemtrackProxy.cpp:44-49`: sem declaração devolve `nullptr` |
+| light | sim | `lights-service.rockchip` | system_server | tolera | `LightsService.java:995-997`: `if (binder != null)` |
+| sensors | sim | não | system_server | tolera | `SensorDevice.cpp:72-75`: `if (!connectHalService()) return;` |
+| thermal | não | `thermal-service.rockchip` | (depois) | tolera | `ThermalManagerService.java:1517-1520`: `waitForDeclaredService` + `return mInstance != null` |
+| usb, usb.gadget | não | blobs | usbd | tolera | `usbd.cpp:69` (`isDeclared`), `UsbPortAidl.java:199-201` e `UsbGadgetAidl.java:94-96` (`isServicePresent` = `isDeclared`) |
+| boot `IBootControl` | não | só recovery | vold | tolera (sem A/B) | `Checkpoint.cpp:143-144` (`if (module)`), `RecoverySystemService.java:325-326` (`isDeclared`) |
+| net.nlinterceptor | não | não | wificond | tolera | `libnlinterceptor.cpp:77-79`: sem declaração, `return false` |
+| vibrator | não | não | (depois) | tolera | `VintfHalVibratorManager.java:57`: `isDeclared` |
+| weaver, authsecret, oemlock, secretkeeper, rebootescrow | weaver sim | não | (depois) | tolera | `SyntheticPasswordManager.java:629-632`, `LockSettingsService.java:1027-1030`, `VendorLockAidl.java:34`, `RecoverySystemService.java:579-582`, `RebootEscrowProviderHalImpl.java:45-47` |
+| tv.input | não | HIDL 1.0 | (depois) | tolera | `JTvInputHal.cpp:48-55` devolve `nullptr`; `TvInputHal.java:94-165` confere `mPtr == 0` |
+| hdmi.cec, hdmi.earc, hdmi.connection | não | não | (depois) | tolera | `HdmiCecController.java:953-956` e `966-969`, `HdmiEarcController.java:66-68` |
+| wifi, supplicant, hostapd | sim (32 bits) | só libs | — | ausente (Wi-Fi ainda não) | `SystemServer.java:2257`: o WifiService só sobe com `FEATURE_WIFI`, que a imagem não declara |
+| bluetooth | sim | sim | — | ausente | `SystemServer.java:1803-1805`: sem `FEATURE_BLUETOOTH` não sobe o serviço (o stack faria `assert` em `hci_hal_impl_android.cc:220` sem HAL) |
+| camera.provider | sim | HIDL | — | ausente | entrada HDMI fica para depois |
+| drm (Widevine/ClearKey) | sim | ClearKey | — | ausente | Widevine é blob (seção DRM) |
+| health, keymint, secureclock, sharedsecret, gatekeeper, allocator, composer3, mapper, media.c2 | sim | sim | — | **presentes** | — |
+
+Conferência no host antes de cada boot: `device/txcz/hy300/tools/check_vintf_hals.py
+out/target/product/hy300` lê os manifestos do vendor, do odm e dos APEX de vendor (extraídos pelo
+check_vintf do build) e falha se faltar algum de `configs/vintf/required_hals.txt` (power, audio
+core/config/effect, health, keymint, allocator, composer3, gatekeeper, media.c2). Na imagem da
+rodada 2 ele acusa exatamente power e áudio.
+
 ### Gravar pelo Alpine
 
 O Alpine de recuperação fica na `boot`; o Android vai na `recovery` e o Alpine entra nele com

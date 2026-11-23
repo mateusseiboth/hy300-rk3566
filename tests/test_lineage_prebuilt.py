@@ -155,5 +155,31 @@ class VerifyBootTest(unittest.TestCase):
         self.assertTrue(any("ramdisk" in p for p in problems), problems)
 
 
+class VariantTest(unittest.TestCase):
+    """boot-panfrost.img: o mesmo boot.img com androidboot.hy300.gpu trocado (o U-Boot confere o
+    ID, então o header é refeito pelo mkboot)."""
+
+    def make(self, cmdline):
+        return mkboot.build(make_boot(cmdline=cmdline))
+
+    def test_replace_cmdline_value_changes_only_that_token(self):
+        boot = self.make(b"console=ttyFIQ0 androidboot.hy300.gpu=sw panic=5")
+        out = mkboot.unpack(lineage_prebuilt.replace_cmdline_value(boot, "androidboot.hy300.gpu", "panfrost"))
+        self.assertEqual(out.cmdline, b"console=ttyFIQ0 androidboot.hy300.gpu=panfrost panic=5")
+
+    def test_variant_keeps_sections_and_a_valid_id(self):
+        boot = self.make(b"androidboot.hy300.gpu=sw")
+        data = lineage_prebuilt.replace_cmdline_value(boot, "androidboot.hy300.gpu", "panfrost")
+        img = mkboot.unpack(data)
+        self.assertEqual(data[576:596], mkboot.compute_id(img))
+        self.assertEqual(img.kernel, mkboot.unpack(boot).kernel)
+        self.assertEqual(img.second, RESOURCE)
+        self.assertEqual(len(data), len(boot))
+
+    def test_missing_key_fails(self):
+        with self.assertRaisesRegex(ValueError, "androidboot.hy300.gpu"):
+            lineage_prebuilt.replace_cmdline_value(self.make(b"panic=5"), "androidboot.hy300.gpu", "sw")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,8 @@ Uso:
                       [--modules-dir <dir com .ko>]
   lineage_prebuilt.py verify-boot boot.img --factory-boot boot.img --kernel-gz Image.gz \\
                       [--partition-size 41943040]
+  lineage_prebuilt.py variant boot.img -o boot-panfrost.img --set androidboot.hy300.gpu=panfrost
+                      (troca o valor de uma chave da cmdline e refaz o ID; mesmo tamanho)
 """
 import argparse
 import gzip
@@ -127,6 +129,24 @@ def find_boot_problems(boot, factory_boot, kernel_gz, partition_size=BOOT_PARTIT
     return problems
 
 
+def replace_cmdline_value(boot, key, value):
+    img = mkboot.unpack(boot)
+    prefix = key.encode() + b"="
+    tokens = img.cmdline.split(b" ")
+    if not any(t.startswith(prefix) for t in tokens):
+        raise ValueError(f"{key} não está na cmdline")
+    cmdline = b" ".join(prefix + value.encode() if t.startswith(prefix) else t for t in tokens)
+    return mkboot.build(mkboot.replace(img, cmdline=cmdline), pad_to=len(boot))
+
+
+def run_variant(args):
+    key, _, value = args.set.partition("=")
+    data = replace_cmdline_value(read_file(args.boot), key, value)
+    write_file(args.output, data)
+    print(f"ok {args.output}: {args.set}")
+    return 0
+
+
 def run_install(args):
     files = install_prebuilts(args.image, args.dtb, args.factory_boot, args.out, args.kernel_ref,
                               args.modules_dir)
@@ -163,6 +183,11 @@ def parse_args(argv):
     verify.add_argument("--kernel-gz", required=True)
     verify.add_argument("--partition-size", type=int, default=BOOT_PARTITION_SIZE)
     verify.set_defaults(run=run_verify_boot)
+    variant = sub.add_parser("variant")
+    variant.add_argument("boot")
+    variant.add_argument("-o", "--output", required=True)
+    variant.add_argument("--set", required=True, help="chave=valor da cmdline")
+    variant.set_defaults(run=run_variant)
     return parser.parse_args(argv)
 
 
