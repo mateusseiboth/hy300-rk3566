@@ -13,11 +13,22 @@ Objetivos:
 - [x] Declarar `android.software.leanback` (apps de TV) — ver `docs/launcher-leanback.md`
 - [x] Splash do U-Boot customizável (`docs/splash.md`)
 - [x] Animação de boot com log ao vivo (`android/bootlog`)
-  - [ ] versão nativa C++ (log desde ~6 s, boot mais rápido) — ver `android/bootlog/README.md`
+  - [x] versão nativa C++ (libgui + FreeType), no LineageOS; desenhando no aparelho desde o boot 1
 - [x] Engenharia reversa do app de configurações da TXCZ (keystone, espelhamento, foco, fontes): `reverse-engineering/MAP.md`
 - [x] App de configuração próprio integrado às Configurações do Android (`android/hy300-settings`)
-- [ ] Áudio da entrada HDMI (RK628)
-- [ ] Android mais novo: kernel 6.x (marco 1) e LineageOS com vendor 64 bits (marco 2), ver `docs/HANDOFF.md`
+- [x] Kernel 6.1 ([kernel-hy300-rk3566](https://github.com/mateusseiboth/kernel-hy300-rk3566)): branch
+  `hy300-6.1` (BSP Rockchip, usada pelo Alpine) e `hy300-ack-6.1` (ACK android14-6.1, usada pelo
+  LineageOS). Painel por SPI, DT embutido, Wi-Fi AIC8800, DVFS até 1,8 GHz. Ver `docs/kernel-6.1.md`
+- [x] Ambiente de recuperação e instalação Alpine Linux na partição `boot`
+  ([hy300-alpine](https://github.com/mateusseiboth/hy300-alpine)): SSH pelo Wi-Fi, ponto de acesso
+  de reserva, grava qualquer partição, fica no Alpine depois de um panic
+- [ ] LineageOS 24.0 TV (Android 17), árvore em
+  [android_device_hy300_rk3566](https://github.com/mateusseiboth/android_device_hy300_rk3566):
+  - [x] visto no aparelho: kernel ACK, display, animação de boot, GPU Panfrost, driver Wi-Fi com scan
+  - [ ] boot completo, Wi-Fi do Android e adb pela rede (em teste), áudio
+  - [ ] Bluetooth, sensores, Widevine, vídeo 10 bits, sepolicy, keystone no SurfaceFlinger
+  - estado detalhado e roteiro em `docs/lineageos.md`
+- [ ] Entrada HDMI com áudio (RK628) no LineageOS (`docs/hdmi-audio.md`)
 - [ ] (futuro) Linux mainline
 
 ## Identificação
@@ -33,7 +44,7 @@ Objetivos:
 | Kernel | 4.19.232 (arm64) |
 | Userspace | **somente 32 bits** (`armeabi-v7a`; `abilist64` vazio) |
 | Treble | sim, VNDK 32, partições dinâmicas (`super`) |
-| Tela | painel interno **LVDS** 1280×720 (`card0-LVDS-1`) |
+| Tela | painel interno **LVDS** 1024×600 (a ROM de fábrica renderiza em 1280×720 e reduz) |
 | HDMI | **entrada** via bridge **RK628** → MIPI-CSI (sem saída HDMI) |
 | Wi-Fi/BT | AIC (aicsemi, driver `AICWFDBG`) |
 
@@ -42,12 +53,14 @@ Detalhes em [`docs/hardware.md`](docs/hardware.md).
 ## Estrutura
 
 ```
-docs/               anotações técnicas (hardware, áudio HDMI, debloat, ROM…)
-scripts/            scripts adb (backup, debloat, restauração)
+docs/               anotações técnicas (hardware, kernel 6.1, LineageOS, HANDOFF, áudio HDMI, debloat…)
+scripts/            scripts adb da ROM de fábrica (backup, debloat, restauração, slot de teste)
 dumps/              dumps pequenos e não sensíveis (ex.: EDID do RK628)
 reverse-engineering/ notas de RE por componente da TXCZ/Rockchip
-kernel/             config e material do kernel de fábrica, marco 1 (6.1) e initramfs de teste
-android/            app de configurações próprio, overlays, GSI (futuro)
+kernel/             config do kernel de fábrica, build do 6.1 (marco 1 e prebuilt do LineageOS), initramfs de teste
+android/            app de configurações, animação de boot (Java e C++), arquivos do build do LineageOS
+tools/              mkboot, resource, sequência do painel, checagens de DT e de kconfig, prebuilt do LineageOS
+tests/              testes das ferramentas e scripts (python3 -m unittest discover -s tests)
 ```
 
 > Imagens de partição, APKs e bibliotecas proprietárias **não** são versionados

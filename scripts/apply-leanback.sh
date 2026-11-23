@@ -4,7 +4,7 @@
 # Reverter: ./revert-leanback.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-IP="${HY300_IP:-}"   # opcional: IP para reconectar via Wi-Fi (ex.: 20.0.0.190)
+IP="${HY300_IP:-}"   # opcional: IP para reconectar via Wi-Fi (ex.: o IP do aparelho na sua rede)
 reconnect() { sleep 45; [[ -n "$IP" ]] && adb connect "$IP:5555" >/dev/null || true; adb wait-for-device; adb root >/dev/null; sleep 3; [[ -n "$IP" ]] && adb connect "$IP:5555" >/dev/null || true; adb wait-for-device; }
 adb root >/dev/null; sleep 3; adb wait-for-device
 adb disable-verity || true

@@ -475,7 +475,7 @@ Watchdog em `AudioSystem.setLowRamDevice` ← `AudioService.<init>`.
   `boot_completed`): instala a chave do PC em `/data/misc/adb/adb_keys` (sem duplicar,
   `system:shell 0640`), liga `adb_enabled`, `service.adb.tcp.port=5555` e reinicia o adbd (a
   autenticação continua ligada), liga o Wi-Fi e conecta com `cmd wifi connect-network` (salva a
-  rede), e apaga o `wifi.conf`. IP por **DHCP** (o `cmd wifi` não tem IP fixo; para 20.0.0.190,
+  rede), e apaga o `wifi.conf`. IP por **DHCP** (o `cmd wifi` não tem IP fixo; para um IP fixo,
   reserva no roteador). Log em `/metadata/hy300-diag/net.txt`, sem a senha.
 - **Retorno ao Alpine**: aos 480 s o diag só reinicia se o adb pela rede **não** estiver de pé
   (`init.svc.adbd=running`, `service.adb.tcp.port=5555` e IPv4 no `wlan0`); se estiver, registra

@@ -1,4 +1,4 @@
-# Handoff — estado do projeto (2026-11-22)
+# Handoff — estado do projeto (2026-11-23)
 
 Documento para outro agente/pessoa continuar de onde paramos. Leia também `README.md`,
 `reverse-engineering/MAP.md` e `android/bootlog/README.md`.
@@ -11,9 +11,29 @@ Documento para outro agente/pessoa continuar de onde paramos. Leia também `READ
 - O usuário não vai abrir o aparelho (sem console serial). Testes de kernel serão feitos pela
   partição `recovery` (ver abaixo).
 
-## Acesso ao aparelho
+## Estado do aparelho em 23/11 (o Android 12 só existe nos backups)
 
-- `adb connect 20.0.0.190:5555`, depois `adb root`, esperar 3 s e reconectar. Após qualquer reboot
+| Partição | Conteúdo |
+|---|---|
+| `boot` | Alpine de recuperação (hy300-alpine), kernel `hy300-6.1`. Boot padrão: conta 5 s e vai para o Android, ou fica (tecla, marca na misc, panic no boot anterior) |
+| `recovery` | boot.img do LineageOS 24 (kernel `hy300-ack-6.1`), subido pelo Alpine com `hy300-android` |
+| `super` | LineageOS 24 TV, rodada em teste (`docs/lineageos.md`) |
+| `backup` | rootfs completo do Alpine (`rootfs.sqfs`) e `config/` |
+| `metadata`, `userdata` | do LineageOS; o `hy300-diag` grava os logs de cada boot em `/metadata/hy300-diag` |
+
+- Acesso: Alpine por `ssh root@<IP do aparelho>` (known_hosts em `~/hy300-work/alpine/known_hosts`);
+  LineageOS por `adb connect <IP>:5555` quando o Wi-Fi do Android estiver de pé (IP por DHCP).
+- Teste de um build do Lineage, sem ninguém no local: roteiro em `docs/lineageos.md`. O Alpine grava
+  a super e a recovery, dispara `hy300-android`, o diag do Lineage grava a marca de ficar e reinicia
+  aos 480 s se o adb pela rede não subir, e o Alpine volta com os logs.
+- Voltar ao Android 12: gravar `super` e `recovery` de `~/hy300-backup` pelo Alpine
+  (`hy300-alpine/scripts/hy300-flash-partition.sh`) e zerar `metadata` e `userdata`.
+- O resto deste documento descreve o Android 12 de fábrica modificado, que vale para quem ainda
+  usa a ROM original.
+
+## Acesso ao aparelho (Android 12 de fábrica)
+
+- `adb connect <IP do aparelho>:5555`, depois `adb root`, esperar 3 s e reconectar. Após qualquer reboot
   é preciso rodar `adb root` de novo. O Wi-Fi (AIC8800) às vezes não volta depois do reboot:
   basta tirar da tomada e ligar de novo.
 - `adb disable-verity` já foi aplicado. As alterações em /system, /product e /vendor ficam num
@@ -32,7 +52,7 @@ Documento para outro agente/pessoa continuar de onde paramos. Leia também `READ
 | `~/hy300-work/marco0/recovery-marco0.img` | recovery de fábrica com `hy300.test=marco0` no cmdline (18 bytes diferentes), pronta para o teste do marco 0 |
 | `~/hy300-work/display-antes-1024x600.txt` | snapshot de props de display antes do teste de 1024×600 (antigo) |
 
-## Estado atual do aparelho
+## Estado do Android 12 de fábrica modificado (até 23/11)
 
 - Debloat feito: `scripts/debloat-packages.txt`. txbox, launcher TXCZ e Adups foram apagados do
   sistema (`scripts/remove-txcz-system-apps.sh`).
