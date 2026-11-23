@@ -958,8 +958,8 @@ nos quatro boot.img, 168 testes da árvore, nenhuma priv-app fora do allowlist (
 traz o `privapp-permissions-hy300-hdmi.xml`). Kernel `cae418b6c490`; SELinux permissive;
 Bluetooth ligado; GApps.
 
-Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 8 em `r8/`). `boot.img`, `boot-uso.img` e
-`boot-sw.img` iguais aos das rodadas 7 e 8:
+Artefatos em `~/hy300-work/lineage-artifacts/r9/` (**não bootam**, ver rodada 10). `boot.img`,
+`boot-uso.img` e `boot-sw.img` iguais aos das rodadas 7 e 8:
 
 | Arquivo | Tamanho | sha256 |
 |---|---|---|
@@ -980,6 +980,78 @@ A conferir no aparelho, além da lista da rodada 8:
 - **Espelhamento**: cada modo de instalação (mesa/teto, frente/trás) espelha uma vez só; um app
   de espelhamento (AirScreen, Cast) também recebe o keystone.
 - Negações de SELinux dos domínios novos (`hy300_hdmiin`, `hy300_hdmi_app`).
+
+### Rodada 10: o boot 6 e o HDMI In do áudio (23/11/2026)
+
+**Boot 6** (super da rodada 9 sobre os dados da 7): `boot_completed=0` aos 501 s, sem panic; o diag
+voltou ao Alpine (logs em `~/hy300-work/lineage-artifacts/boot6/`). O coordenador voltou a super da
+rodada 7.
+
+**Causa:** o HAL de áudio AIDL de exemplo (`android.hardware.audio.service-aidl.example`, APEX
+`com.android.hardware.audio`) abortou 55 vezes com
+`Function: convertModuleConfigToAidl Line: 534 Failed result (BAD_VALUE)`. A linha 534 do
+`hardware/interfaces/audio/aidl/default/XsdcConversion.cpp` é a conversão das devicePorts, e o log
+logo antes diz qual regra:
+`convertDevicePortsInModuleToAidl: Review Audio Policy config: <attachedDevices> list is incorrect or devicePort "HDMI In" type= AudioDeviceDescription{type: IN_DEVICE, connection: hdmi} is incorrect.`
+A regra (mesmo arquivo, `convertDevicePortsInModuleToAidl`):
+
+```cpp
+if (xAttachedDeviceSet.count(port.name) != devicePort.device.type.connection.empty()) {
+    ... return unexpected(BAD_VALUE);
+```
+
+um devicePort está em `<attachedDevices>` **se e só se** a conexão do tipo dele for vazia. A
+tabela legado para AIDL (`frameworks/av/media/audioaidlconversion/AidlConversionCppNdk.cpp`,
+`getAudioDevicePairs`) dá a `AUDIO_DEVICE_IN_HDMI` a conexão `HDMI`: é dispositivo externo, que só
+existe depois de conectado. Anexado ao módulo, o HAL aborta, reinicia em laço e o system_server
+fica preso no AudioService, como na rodada 4.
+
+**Correção:** o "HDMI In" (`CARD_1_DEV_0`, placa `rockchiphdmiin`) passa a
+`AUDIO_DEVICE_IN_TV_TUNER`, tipo embutido (conexão vazia) e sempre presente, o que é verdade no
+HY300: o RK628 é soldado na placa. Endereço, perfis, mixPort `hdmi input` e rota continuam. O HAL
+de TV input anuncia o mesmo tipo (`AudioDeviceType::IN_TV_TUNER`) e o app HDMI procura a porta
+`DEVICE_IN_TV_TUNER` para o patch de áudio. A alternativa (manter `IN_HDMI` fora do
+`<attachedDevices>`) exigiria alguém conectar o dispositivo com `setWiredDeviceConnectionState`
+antes de cada uso e o HAL de exemplo ler o perfil da placa nessa hora: mais partes sem teste.
+
+**Teste no host:** `tools/check_audio_policy.py` aplica as regras do `XsdcConversion.cpp` aos
+módulos do `audio_policy_configuration.xml` do vendor (incluindo os `xi:include`): um
+`<devicePorts>` e um `<mixPorts>` por módulo, tipo presente na tabela (`convertDeviceTypeToAidl`),
+anexado só se a conexão for vazia, e rotas só entre portas que existem
+(`getSinkPortId`/`getSourcePortIds`). A conexão de cada tipo vem da própria tabela do AOSP, lida do
+checkout. O `r_submix` não passa pela conversão no HAL (`AudioPolicyConfigXmlConverter::init`) e
+fica de fora. O XML do boot 6 fica em `tools/tests/data/` como caso que tem de falhar. Rodar a
+conversão do AOSP no host não deu: o `audio_policy_config_xml_converter_tests` só compila para o
+aparelho (libmedia_helper e os parsers do xsdc não são de host).
+
+**Outras falhas da rodada 9 no mesmo log:** nenhuma. Os 55 tombstones são todos do HAL de áudio.
+`vendor.sensors-hy300`, `vendor.tv-input-hy300`, `vendor.hy300-hdmiin` e
+`vendor.bluetooth-default` ficaram `running` com o PID do começo do boot (sem reinício); o
+`hy300-bt-uart` terminou (oneshot); o SurfaceFlinger rodou sem erro do keystone (só
+"trackPendingFrame: Invalid present fence", que já aparecia). O logcat e o dmesg do diag guardam
+só o fim do boot, então o que veio antes do laço do áudio não ficou registrado.
+
+Conferências: `check_audio_policy.py` (árvore e o XML da imagem), `check_sepolicy.py`,
+`check_vintf_hals.py` ("11 HALs obrigatórios declarados; todo HAL declarado tem serviço no
+init"), `verify-boot` nos quatro boot.img, 178 testes da árvore, nenhuma priv-app fora do
+allowlist. Árvore `3948804`.
+
+Artefatos em `~/hy300-work/lineage-artifacts/` (rodada 9 em `r9/`); `boot.img`, `boot-uso.img` e
+`boot-sw.img` iguais aos das rodadas 7 a 9:
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` | 19.890.176 | `55bebe21d952150bd466eecb85ed0c31a63ee2a0a8cfaa53540fc1bcd60efe65` |
+| `boot-uso.img` | 19.890.176 | `47be28acfe3c1c89ad7756acac54ee7d015da830eccaf0ba7c219fd4e72ea2c3` |
+| `boot-sw.img` | 19.890.176 | `638f1b676bd5e49b20d77dcdaa0abebf4fb7f95edd54c89509087dcd41a9d378` |
+| `recovery.img` | 32.622.592 | `9ae5a837075755562192d073e109a065c9c8f4cfd2be0a4d1b85a0d77890d0d6` |
+| `super.img` (sparse) | 1.876.717.576 | `84fb2ca2a4f1a253f8d007bf82361042737ceb7d33a3d80d0cd627fdbd59651a` |
+| `super.raw` | 3.263.168.512 | `aa7197a3d7a443918911b4f39dba5717194070e2be9337548341f93caf5ed5ed` |
+
+No aparelho, além das listas das rodadas 8 e 9: `logcat -s AHAL_Config` sem "Review Audio Policy
+config", `dumpsys media.audio_policy` com o "HDMI In" (`AUDIO_DEVICE_IN_TV_TUNER`,
+`CARD_1_DEV_0`) entre os dispositivos de entrada disponíveis, e o áudio do HDMI no alto-falante
+com o app HDMI aberto.
 
 ### Gravar pelo Alpine
 

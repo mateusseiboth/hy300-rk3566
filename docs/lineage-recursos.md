@@ -118,7 +118,10 @@ framework (`STREAM_CONFIGURATIONS_CHANGED`). `openStream` devolve um sideband co
 captura e a geometria.
 
 **Áudio:** "HDMI In" (`CARD_1_DEV_0`, a placa `rockchiphdmiin`) no módulo primário do audio
-policy, sem rota para o alto-falante. O HAL de áudio de exemplo do AOSP escolhe a placa ALSA pelo
+policy, sem rota para o alto-falante. O tipo é `AUDIO_DEVICE_IN_TV_TUNER` (embutido), não
+`AUDIO_DEVICE_IN_HDMI`: o HAL de áudio AIDL de exemplo aborta se um dispositivo com conexão
+("hdmi") estiver em `<attachedDevices>`, e foi isso que parou o boot 6 (rodada 10, em
+[`lineageos.md`](lineageos.md)). O HAL de TV input e o app HDMI usam o mesmo tipo. O HAL de áudio de exemplo do AOSP escolhe a placa ALSA pelo
 endereço; o TvInputHardwareManager pede o patch HDMI In para a saída e o audio policy monta a
 ponte por software. Confirmar no aparelho que a placa é a 1 e a taxa da fonte
 (`/sys/class/hdmirx/rk628/audio_rate`): a porta aceita 32, 44,1 e 48 kHz.
