@@ -11,6 +11,7 @@ AOSP_DREAM=com.android.dreams.basic/com.android.dreams.basic.Colors
 
 adb root >/dev/null; sleep 3; adb wait-for-device
 adb shell pm enable "$PKG"
+adb shell pm disable io.github.hy300.settings/.AndroidSettingsActivity
 for key in screensaver_components screensaver_default_component; do
     cur=$(adb shell settings get secure "$key" | tr -d '\r')
     [[ "$cur" == "$AOSP_DREAM" ]] && adb shell settings put secure "$key" "$TXCZ_DREAM"

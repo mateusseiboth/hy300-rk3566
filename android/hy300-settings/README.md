@@ -141,6 +141,11 @@ O Projectivy usa exatamente essa ação (`SettingsAndroidActivity` e o ícone de
 **Correção:**
 - Este app declara `android.settings.SETTINGS` em `AndroidSettingsActivity` (sem interface), que repassa para `com.android.tv.set/.MainSettings`.
   O destino é escolhido por `AndroidSettingsTarget` entre quem trata `MAIN` + `LEANBACK_SETTINGS`, nunca o pacote da TXCZ nem este app.
+- **Essa activity vem desligada no manifesto (`android:enabled="false"`).** No LineageOS o `com.android.tv.settings/.MainSettings` já trata
+  `android.settings.SETTINGS`, e com as duas habilitadas o launcher mostrava o seletor "Concluir a ação usando: Configurações / Projetor". O app é
+  complemento do TvSettings, nunca alternativa. Só a ROM de fábrica precisa dela: `system/disable-txcz-settings.sh` faz
+  `pm enable io.github.hy300.settings/.AndroidSettingsActivity` e `enable-txcz-settings.sh` desliga de novo. `tests/test_hy300_settings_manifest.py`
+  falha se algum componente habilitado do app declarar uma ação `android.settings.*`.
 - `system/disable-txcz-settings.sh` desativa o pacote `com.android.tv.settings` inteiro com `pm disable` (nada é apagado; `enable-txcz-settings.sh` reverte).
   Das ações públicas do TxczSetting, só `android.settings.SETTINGS` (no `MainActivity`, com `MAIN`/`LAUNCHER`/`LEANBACK_LAUNCHER`) era de Configurações; as demais
   são do protetor de tela, do `BridgeService`, do vendor storage (`VsReceiver`, `MyService`) e do autofoco (app ausente). Nenhuma outra ação `android.settings.*`
@@ -153,7 +158,9 @@ O Projectivy usa exatamente essa ação (`SettingsAndroidActivity` e o ícone de
   (eventos injetados não passam pela acessibilidade): o `startActivity` falha e o `system_server` segue vivo (o JNI do input limpa a exceção).
   Com o controle, o `F12KeyService` consome a tecla antes e abre este app.
 
-**Item "Projetor" no menu principal.** Não há tiles injetados no menu principal do TvSettings 12, mas há o item oculto **`sound`**
+**Item "Projetor" no menu principal.** No LineageOS a ação é `com.android.tv.settings.SOUND` (mesmo mecanismo, `MainFragment.kt`), e o `MainActivity` declara as duas.
+
+Na ROM de fábrica: Não há tiles injetados no menu principal do TvSettings 12, mas há o item oculto **`sound`**
 (`intent action=com.android.tv.set.SOUND`): `MainFragment.updateSoundSettings()` o mostra se um **app de sistema** tratar a ação, com título, resumo e ícone
 dos recursos `sound_pref_title`, `sound_pref_summary` e `sound_icon` desse pacote (protegidos do `shrinkResources` por `res/raw/keep.xml`).
 Por isso o app é instalado como priv-app (`install-system.sh`). Depois do reboot, a cópia em `/data` (mesma assinatura e versão) vira atualização do app de sistema.

@@ -36,7 +36,7 @@ Objetivos:
 | Item | Valor |
 |---|---|
 | SoC | Rockchip RK3566 (4× Cortex-A55), Mali-G52 |
-| RAM / eMMC | 2 GB / 16 GB (`mmcblk2`) |
+| RAM / eMMC | 1,5 GB (o kernel vê 1,45 GB) / 16 GB (`mmcblk2`) |
 | Placa | `rk3566_sgo`, modelo TXCZ `rk3566_y356tx`, `ro.txcz.devicename=HY300` |
 | ROM | `TXCZ_LightOS_T6P`, Android 12 (SDK 32), build `eng.txcz.20240118.181251` |
 | Tipo de build | `userdebug` / `release-keys` → `adb root` funciona |

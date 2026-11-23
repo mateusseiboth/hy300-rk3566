@@ -52,11 +52,14 @@
             </intent-filter>
         </activity>
 
-        <!-- android.settings.SETTINGS: o TvSettings do aparelho (com.android.tv.set) não declara
-             esta ação, e a única outra activity que a tratava era a tela da TXCZ (desativada por
-             system/disable-txcz-settings.sh). Repassa para com.android.tv.set/.MainSettings. -->
+        <!-- android.settings.SETTINGS: o TvSettings da ROM de fábrica (com.android.tv.set) não
+             declara esta ação, e a única outra activity que a tratava era a tela da TXCZ.
+             Desligada por padrão: no LineageOS o com.android.tv.settings já trata a ação, e com
+             as duas o launcher abre o seletor "Concluir a ação usando". Na ROM de fábrica,
+             system/disable-txcz-settings.sh liga o componente com "pm enable". -->
         <activity
             android:name=".AndroidSettingsActivity"
+            android:enabled="false"
             android:exported="true"
             android:excludeFromRecents="true"
             android:noHistory="true"
