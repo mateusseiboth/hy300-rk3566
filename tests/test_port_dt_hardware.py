@@ -88,6 +88,22 @@ class PortHardwareDtTest(unittest.TestCase):
         self.assertEqual(cpu, "/i2s@fe430000")
         self.assertTrue(is_okay(self.tree[cpu]))
 
+    def card_index(self, name):
+        path = next(p for p in nodes_with(self.tree, "simple-audio-card")
+                    if self.tree[p].get("simple-audio-card,name") == name.encode() + b"\0")
+        return dt.cells(self.tree[path]["hy300,card-index"])
+
+    def test_speaker_card_is_card0_like_factory(self):
+        # O áudio do LineageOS usa card 0 = alto-falante (I2S1) e card 1 = HDMI In (I2S3).
+        self.assertEqual(self.card_index("rockchip,rockchip-i2s-sound"), [0])
+
+    def test_hdmiin_card_is_card1_like_factory(self):
+        self.assertEqual(self.card_index("rockchip,hdmiin"), [1])
+
+    def test_no_placeholder_rk_motor_node(self):
+        # o nó "rk_motor" de fábrica não tem driver no 6.1; o motor é o txcz,hy300-focus-motor
+        self.assertEqual(nodes_with(self.tree, "usb-cam-gpio"), [])
+
 
 if __name__ == "__main__":
     unittest.main()

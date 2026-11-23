@@ -824,6 +824,14 @@ o subdev do RK628 (DV timings, `audio_present`, `audio_sampling_rate`),
 `/sys/class/hdmirx/rk628/{audio_present,audio_rate}` e a placa ALSA `rockchiphdmiin` (captura).
 Falta no aparelho: probe do RK628 sem fonte, depois uma fonte HDMI (vídeo no ISP e áudio).
 
+Ordem das placas ALSA: com o RK628 ligado, a rodada 10 do LineageOS mostrou card 0 =
+`rockchiphdmiin` e card 1 = alto-falante, o contrário da fábrica. Na fábrica não há mecanismo:
+as duas placas fazem probe na mesma rodada e vale a ordem dos nós no DT (lá o alto-falante vem
+antes). No porte, o `soc-core` lê `hy300,card-index` do nó da placa (`61119495b3c6`) e o DT pede
+0 para a `rockchip-i2s-sound` e 1 para a `hdmi-in-sound`. Conferido no QEMU virt com duas
+`simple-audio-card` de `dummy-codec` na ordem do nosso DT: sem a propriedade, card 0 = hdmiin;
+com ela, card 0 = alto-falante.
+
 ## Como entrar na recovery sem tocar na misc
 
 O `adb reboot recovery` do Android 12 grava `boot-recovery` no BCB da `misc` (o init do
