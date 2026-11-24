@@ -5,6 +5,8 @@ O que cada nó precisa ter, levantado do DT, do dmesg e do kernel de fábrica:
     usb-cam-gpio de fábrica, que usava números fixos no código);
   - acelerômetro SC7A20 no I2C0 0x19 (o dmesg de fábrica lê o id 0x11);
   - Bluetooth do AIC8800 no UART1 (ttyS1) com o bluetooth-platdata;
+  - amplificador do alto-falante ligado pelo GPIO1_B2 (gpio 42 fixo no mute do dummy-codec de
+    fábrica: nível alto = som);
   - RK628 (HDMI -> MIPI CSI) ligado ao csi2-dphy0 e ao rkisp-vir0, e a placa "rockchip,hdmiin"
     no I2S3.
 
@@ -19,7 +21,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 import dt_gpio_irq as dt  # noqa: E402
 
 PORT_DTB = os.environ.get("HY300_PORT_DTB", "")
+GPIO1 = "/pinctrl/gpio@fe740000"
 GPIO4 = "/pinctrl/gpio@fe770000"
+RK_PB2 = 10
 GPIO_ACTIVE_HIGH = 0
 
 
@@ -103,6 +107,13 @@ class PortHardwareDtTest(unittest.TestCase):
     def test_no_placeholder_rk_motor_node(self):
         # o nó "rk_motor" de fábrica não tem driver no 6.1; o motor é o txcz,hy300-focus-motor
         self.assertEqual(nodes_with(self.tree, "usb-cam-gpio"), [])
+
+    def test_speaker_amplifier_enabled_by_gpio1_b2_high(self):
+        hogs = [props for path, props in self.tree.items()
+                if path.startswith(GPIO1 + "/") and "gpio-hog" in props]
+        self.assertEqual(len(hogs), 1, hogs)
+        self.assertEqual(dt.cells(hogs[0]["gpios"]), [RK_PB2, GPIO_ACTIVE_HIGH])
+        self.assertIn("output-high", hogs[0])
 
 
 if __name__ == "__main__":
