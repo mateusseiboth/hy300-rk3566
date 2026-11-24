@@ -32,6 +32,7 @@ device/txcz/hy300/tools/build-mesa-host-tools.sh .         # uma vez
 export PATH="$HOME/hy300-work/mesa-host/install/bin:$PATH"
 export GOMEMLIMIT=20GiB SOONG_INCREMENTAL_ANALYSIS=false   # 31 GB de RAM: ver abaixo
 export ALLOW_MISSING_DEPENDENCIES=true                     # poda do checkout: ver abaixo
+export BUILD_USERNAME=mateusseiboth BUILD_HOSTNAME=build   # ro.build.user/host
 source build/envsetup.sh && lunch lineage_hy300-cp2a-userdebug
 nice -n 10 m -j12
 python3 ~/hy300-handoff/hy300-rk3566/tools/lineage_prebuilt.py verify-boot \
@@ -1302,6 +1303,61 @@ A conferir: `grep overlay /proc/mounts` vazio depois de gravar; vídeo no YouTub
 Netflix e um player ExoPlayer em SurfaceView, sem "fetchGraphicBlock with err 22"; se a imagem do
 vídeo sair errada ou preta, ver no `dumpsys SurfaceFlinger` se a camada foi para DEVICE (plano) ou
 CLIENT (GPU).
+
+### Rodada 14: 64 + 32 bits, som, cor e composição pela GPU (23/11/2026)
+
+Árvore `cff3d74` (cor e AV1) e `8bbd9f5` (32 bits, pt-BR); kernel `9987b4d3654c` (amplificador).
+
+- **Som no alto-falante**: o amplificador liga com o GPIO1_B2 (gpio 42) em nível alto. Na fábrica o
+  pino ficava fixo no mute do dummy-codec da TXCZ (alto ao tocar, baixo ao silenciar). O DT do 6.1
+  leva um `gpio-hog` `speaker-amp-enable` com `output-high` (teste em
+  `tests/test_port_dt_hardware.py`). O `ntp9818` que a fábrica tenta iniciar (I2C 0, 0x0c) não
+  existe na placa: todas as escritas falham.
+- **Vídeo travado no YouTube**: ele escolhia o `c2.android.av1-dav1d.decoder` (software,
+  media.swcodec a 194 % de CPU). O RK3566 não tem AV1 em hardware: os dois decoders AV1 de software
+  ficam desligados no `media_codecs.xml` do vendor (`update="true" enabled="false"`), e o YouTube
+  cai no VP9 por hardware.
+- **Roxo e verde no vídeo**: no buffer mode o c2.rk copiava o NV12 com `dstVStride = altura
+  alinhada a 2`, mas o minigbm alinha a altura do NV12 a 16 (1080 vira 1088) e o plano UV caía no
+  lugar errado. Patch `codec2/0007`: o vstride sai do layout real, `(U - Y) / rowInc`.
+- **Faixas no YouTube e lixo no mouse da Netflix**: os planos de overlay do VOP2 pelo
+  drm_hwcomposer garbavam a imagem (downscale além do limite do VOP, plano Smart com a Netflix de
+  352 de largura). Composição toda pela GPU com `vendor.hwc.drm.scale_with_gpu=1` e
+  `ro.vendor.hwc.use_overlay_planes=0` no `/vendor/build.prop`. Resolveu também o pisca do YouTube
+  ao navegar e o da Home do Crunchyroll. **Por enquanto só pelo remount** (a gravação da `super`
+  apaga): entra na árvore na rodada 15.
+- **Netflix de celular em paisagem**: `OVERRIDE_ANY_ORIENTATION_TO_USER` só vale em tela grande
+  (sw >= 600dp). Com densidade 170 a tela tem sw565dp; com 160 tem sw600dp e a Netflix usa o layout
+  de tablet. No aparelho: `wm density 160`, `am compat enable OVERRIDE_ANY_ORIENTATION_TO_USER
+  com.netflix.mediaclient` e `cmd window set-ignore-orientation-request true` (ficam no `/data`).
+  Rodada 15: `ro.sf.lcd_density=160` na árvore.
+- **64 + 32 bits**: `core_64_bit.mk` (zygote64_32, o de 32 bits em lazy preload), para apps de TV
+  que só publicam armeabi-v7a. Os HALs continuam só em 64 bits; o que o app carrega no próprio
+  processo sai nas duas (`tools/check_vendor_32bit.py`).
+- **Netflix de TV** (`com.netflix.ninja` 13.2.4, armeabi-v7a): não roda. Com `adb root` ligado o
+  DexGuard dela detecta root e o processo morre (SIGSEGV, sem tombstone). Sem `adb root` ela abre e
+  para em "Esta versão do aplicativo Netflix não é compatível com seu aparelho (-13)": aparelho sem
+  certificação Netflix. As features dela não são declaradas; fica a Netflix de celular.
+- **Imagem fantasma** de alguns segundos depois que o foco muda: o `screencap` sai limpo e o
+  timing e a sequência SPI do painel são os da fábrica, então é do LCD. Não se sabe se a fábrica
+  tinha.
+
+**Kernel velho no boot.img**: o build copia o `prebuilt/Image.gz` para `out/.../kernel` no começo.
+Se o `build-lineage-kernel.sh` terminar com o `m` já rodando, o boot.img sai com o kernel anterior.
+O `verify-boot` acusa (`FALHOU: kernel diferente do prebuilt Image.gz`); rode sempre antes de
+gravar. Para consertar sem recompilar: `unpack_bootimg.py --format=mkbootimg` e `mkbootimg.py`
+com os mesmos argumentos, trocando só o `--kernel`.
+
+Artefatos em `~/hy300-work/lineage-gravar/r14/` (`boot.img` reempacotado com o kernel novo, vai na
+`recovery`; `super.raw` crua).
+
+| Arquivo | Tamanho | sha256 |
+|---|---|---|
+| `boot.img` | 19.892.224 | `8cf3642f29d5f56646f3945d2cd2661ca7c46ab3333a583c43067a097e9b71d4` |
+| `super.raw` | 3.263.168.512 | `121493f286d40b62f5a3fe2ce16f07442c20eef3d8769b7448e631ce11fde928` |
+
+Conferido no aparelho: kernel de 23/11 19:59 com `gpio-42 speaker-amp-enable out hi`,
+`ro.product.cpu.abilist32=armeabi-v7a,armeabi`, som, cor, YouTube e Crunchyroll sem pisca.
 
 ### Gravar pelo Alpine
 

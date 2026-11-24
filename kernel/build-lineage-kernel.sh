@@ -34,7 +34,7 @@ VENDOR_IMG="${VENDOR_IMG:-$HOME/hy300-work/vendor.img}"
 JOBS="${JOBS:-12}"
 DTB_NAME=rk3566-hy300.dtb
 
-export KBUILD_BUILD_USER=hy300 KBUILD_BUILD_HOST=build
+export KBUILD_BUILD_USER=mateusseiboth KBUILD_BUILD_HOST=build
 
 COMMIT="$(git -C "$KSRC_GIT" rev-parse --short=12 "$KREF^{commit}")"
 KSRC="$LKWORK/src-$COMMIT"

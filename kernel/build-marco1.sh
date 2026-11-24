@@ -54,7 +54,7 @@ AIC_MODULES=(aic8800_bsp aic8800_fdrv)
 OUT="$WORK/recovery-marco1.img"
 
 # Nome neutro no "Linux version": a imagem não deve carregar usuário/máquina de quem compilou.
-export KBUILD_BUILD_USER=hy300 KBUILD_BUILD_HOST=build
+export KBUILD_BUILD_USER=mateusseiboth KBUILD_BUILD_HOST=build
 
 kmake() {
 	make -s -C "$KSRC" O="$1" ARCH=arm64 "${KMAKE_TOOLCHAIN[@]}" -j"$JOBS" "${@:2}"
