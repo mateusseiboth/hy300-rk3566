@@ -1324,13 +1324,14 @@ CLIENT (GPU).
   drm_hwcomposer garbavam a imagem (downscale além do limite do VOP, plano Smart com a Netflix de
   352 de largura). Composição toda pela GPU com `vendor.hwc.drm.scale_with_gpu=1` e
   `ro.vendor.hwc.use_overlay_planes=0` no `/vendor/build.prop`. Resolveu também o pisca do YouTube
-  ao navegar e o da Home do Crunchyroll. **Por enquanto só pelo remount** (a gravação da `super`
-  apaga): entra na árvore na rodada 15.
+  ao navegar e o da Home do Crunchyroll. Na árvore desde `3c557ac` (rodada 15); na rodada 14 foi
+  pelo remount, que a gravação da `super` apaga.
 - **Netflix de celular em paisagem**: `OVERRIDE_ANY_ORIENTATION_TO_USER` só vale em tela grande
   (sw >= 600dp). Com densidade 170 a tela tem sw565dp; com 160 tem sw600dp e a Netflix usa o layout
   de tablet. No aparelho: `wm density 160`, `am compat enable OVERRIDE_ANY_ORIENTATION_TO_USER
   com.netflix.mediaclient` e `cmd window set-ignore-orientation-request true` (ficam no `/data`).
-  Rodada 15: `ro.sf.lcd_density=160` na árvore.
+  Na árvore desde `3c557ac`: `TARGET_SCREEN_DENSITY := 160` (com sw600dp o framework já ignora o
+  pedido de orientação por padrão) e o override em `/product/etc/appcompat/compat_framework_overrides.xml`.
 - **64 + 32 bits**: `core_64_bit.mk` (zygote64_32, o de 32 bits em lazy preload), para apps de TV
   que só publicam armeabi-v7a. Os HALs continuam só em 64 bits; o que o app carrega no próprio
   processo sai nas duas (`tools/check_vendor_32bit.py`).
